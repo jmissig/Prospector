@@ -1,0 +1,8 @@
+.DS_Store
+Prospector/*.usdz
+xcuserdata/
+*.xcuserstate
+.claude/settings.local.json
+DerivedData/
+build/
+.swiftpm/
