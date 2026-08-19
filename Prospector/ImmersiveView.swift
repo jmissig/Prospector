@@ -14,7 +14,8 @@ struct ImmersiveView: View {
 
     @StateObject private var controllerManager = GameControllerManager()
     @State private var contentRoot: Entity?
-    @State private var interfaceAnchor: AnchorEntity?
+    @State private var interfaceRoot: Entity?
+    @State private var isInterfacePlacementPending = false
     @State private var isRealityViewReady = false
     @State private var sceneEntity: Entity?
     @State private var loadedModel: ModelDescriptor?
@@ -63,10 +64,11 @@ struct ImmersiveView: View {
             content.add(root)
             contentRoot = root
 
-            let anchor = AnchorEntity(.head)
-            content.add(anchor)
-            interfaceAnchor = anchor
-            attachPanels(attachments, to: anchor)
+            let interface = Entity()
+            interface.isEnabled = false
+            content.add(interface)
+            interfaceRoot = interface
+            attachPanels(attachments, to: interface)
 
             isImmersiveActive = true
             isRealityViewReady = true
@@ -99,6 +101,8 @@ struct ImmersiveView: View {
             startARKit()
             
             updateSubscription = content.subscribe(to: SceneEvents.Update.self) { event in
+                placeInterfaceRelativeToHeadIfNeeded()
+
                 guard let entity = sceneEntity else { return }
                 
                 if entity.isEnabled != isContentVisible {
@@ -233,8 +237,9 @@ struct ImmersiveView: View {
                 navigationRuntime.wasPoseChanging = poseChanged
             }
         } update: { _, attachments in
-            guard let interfaceAnchor else { return }
-            attachPanels(attachments, to: interfaceAnchor)
+            guard let interfaceRoot else { return }
+            attachPanels(attachments, to: interfaceRoot)
+            placeInterfaceRelativeToHeadIfNeeded()
         } attachments: {
             Attachment(id: ImmersiveAttachment.locations) {
                 if isLocationsPanelPresented {
@@ -307,9 +312,13 @@ struct ImmersiveView: View {
                 Text(modelSelection.selectedModel.displayName)
                     .font(.headline)
                 Spacer()
-                Button("Dismiss", systemImage: "xmark") {
+                Button {
                     setLocationsPanelPresented(false)
+                } label: {
+                    Label("Close saved locations", systemImage: "xmark")
+                        .labelStyle(.iconOnly)
                 }
+                .buttonStyle(.borderless)
             }
 
             if modelSelection.savedLocations.isEmpty {
@@ -370,6 +379,42 @@ struct ImmersiveView: View {
                 anchor.addChild(controllerGuide)
             }
         }
+    }
+
+    @MainActor
+    private func placeInterfaceRelativeToHeadIfNeeded() {
+        guard isInterfacePlacementPending,
+              let interfaceRoot,
+              let worldTracking,
+              let deviceAnchor = worldTracking.queryDeviceAnchor(
+                atTimestamp: CACurrentMediaTime()
+              ) else { return }
+
+        let deviceTransform = deviceAnchor.originFromAnchorTransform
+        let devicePosition = SIMD3<Float>(
+            deviceTransform.columns.3.x,
+            deviceTransform.columns.3.y,
+            deviceTransform.columns.3.z
+        )
+        let deviceBack = SIMD3<Float>(
+            deviceTransform.columns.2.x,
+            0,
+            deviceTransform.columns.2.z
+        )
+        guard simd_length_squared(deviceBack) > 0.0001 else { return }
+
+        // Sample the headset's position and yaw once when the panels open. A normal
+        // world-space entity then keeps the SwiftUI attachments stationary instead of
+        // making them follow every head movement like AnchorEntity(.head) did.
+        let normalizedBack = simd_normalize(deviceBack)
+        let yaw = atan2(normalizedBack.x, normalizedBack.z)
+        interfaceRoot.position = devicePosition
+        interfaceRoot.orientation = simd_quatf(
+            angle: yaw,
+            axis: SIMD3<Float>(0, 1, 0)
+        )
+        interfaceRoot.isEnabled = true
+        isInterfacePlacementPending = false
     }
 
     @MainActor
@@ -539,8 +584,9 @@ struct ImmersiveView: View {
         modeCueTask = nil
         modeCueText = nil
         contentRoot = nil
-        interfaceAnchor?.removeFromParent()
-        interfaceAnchor = nil
+        interfaceRoot?.removeFromParent()
+        interfaceRoot = nil
+        isInterfacePlacementPending = false
         modelSelection.loadState = .idle
         setLocationsPanelPresented(false)
 
@@ -649,10 +695,23 @@ struct ImmersiveView: View {
     @MainActor
     private func setLocationsPanelPresented(_ isPresented: Bool) {
         guard isLocationsPanelPresented != isPresented else { return }
+
+        if isPresented {
+            interfaceRoot?.isEnabled = false
+            isInterfacePlacementPending = true
+        } else {
+            interfaceRoot?.isEnabled = false
+            isInterfacePlacementPending = false
+        }
+
         withAnimation(.easeInOut(duration: 0.18)) {
             isLocationsPanelPresented = isPresented
         }
         controllerManager.navigationEnabled = !isPresented
+
+        if isPresented {
+            placeInterfaceRelativeToHeadIfNeeded()
+        }
     }
 
     @MainActor

@@ -74,7 +74,7 @@ Pair a game controller (e.g. a Nintendo Switch Pro Controller, DualSense, or Xbo
 | A | Show or dismiss saved locations |
 | X / Y | Jump to the previous / next saved location |
 
-Single-tap in the immersive view to show the saved-locations panel on the left. A separate controller guide appears below your view, using the connected controller's own button labels and glyphs when available. It includes the stick, trigger, and complete D-pad mapping so the controls do not need to be memorized.
+Single-tap in the immersive view to show the saved-locations panel on the left. A separate controller guide appears below your view, using the connected controller's own button labels and glyphs when available. The panels use your current viewpoint for their initial placement, then remain fixed in the immersive world instead of following your head. The guide includes the stick, trigger, and complete D-pad mapping so the controls do not need to be memorized.
 
 While the panels are visible, movement and turning inputs are paused; use look-and-pinch to choose a location, add the current position, delete a location, or dismiss the locations panel. Press A again for a reliable controller-only dismissal.
 

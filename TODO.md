@@ -13,12 +13,13 @@ These items were observed on Vision Pro hardware after loading a real `.prospect
 - Explore standard visionOS behavior for dismissing, hiding, minimizing, or repurposing the window while immersed, including how the user reliably gets it back.
 - Preserve access to model switching, resume preferences, loading errors, and immersive-space exit rather than removing the window without a replacement path.
 
-### Restore access to saved-locations controls
+### Verify saved-locations controls and spatial placement
 
 - Neither the immersive single-tap gesture nor controller **A** made the saved-locations panel or controller guide appear during the first v1.1 hardware test.
-- Reproduce look-and-pinch and controller activation independently to determine whether the failure is input recognition, shared presentation state, RealityView attachment creation, or head-anchored placement/visibility.
-- Add temporary diagnostics that distinguish “toggle action received” from “attachment rendered.”
-- Verify the locations panel appears to the left and the independent controller guide appears bottom-center, then confirm dismiss, Add, jump, and delete on Vision Pro.
+- A later hardware build displayed both panels, confirming the attachments render, but they were incorrectly parented to a head anchor and followed every head movement. The controller guide was also much taller than its content because an unconstrained vertical divider expanded the row, and the locations panel used a nonstandard text-and-symbol dismissal control.
+- Prospector now samples the headset position and yaw once when the panels open, places both attachments in world space, constrains the controller guide to its ideal content height, and uses a standard icon-only Close button with an accessibility label.
+- Verify look-and-pinch and controller **A** independently open the panels in the current build.
+- Verify the locations panel remains world-stable to the left and the independent controller guide remains world-stable at bottom-center, then confirm Close, Add, jump, and delete on Vision Pro.
 
 ### Verify corrected D-pad Up and terrain-follow transforms
 

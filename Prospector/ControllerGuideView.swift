@@ -26,6 +26,7 @@ struct ControllerGuideView: View {
                     control(presentation.buttonX, action: "Previous location")
                     control(presentation.buttonY, action: "Next location")
                     Divider()
+                        .frame(height: 58)
                     control(presentation.leftThumbstick, action: "Move")
                     control(presentation.rightThumbstick, action: "Virtual turn")
                     control(presentation.leftTrigger, action: "Move down")
@@ -57,6 +58,7 @@ struct ControllerGuideView: View {
         }
         .padding(18)
         .frame(width: 780)
+        .fixedSize(horizontal: false, vertical: true)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24))
         .accessibilityElement(children: .contain)
         .allowsHitTesting(false)
