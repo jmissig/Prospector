@@ -4,6 +4,12 @@ This is the product and engineering backlog for Prospector. Performance-specific
 
 ## Saved locations and immersive controls
 
+### Investigate pinch-to-show locations
+
+- The intended single pinch/tap gesture does not show the saved-locations panel on Vision Pro; controller A remains the documented reliable entry point.
+- Determine whether the immersive gesture is not being recognized, is attached to the wrong RealityKit target, or conflicts with system input handling.
+- Verify opening and dismissal with direct hand input on Vision Pro without changing look-and-pinch interaction inside the visible panel.
+
 ### Add deliberate saved-location editing
 
 - Add an **Edit** button while keeping the normal saved-locations panel jump-only and safe from accidental destructive actions.
