@@ -16,7 +16,7 @@ Prospector is an Apple Vision Pro viewer for walking through authored-scale hous
 
 The household use case is:
 
-- load the 636 house/site USDZ exports on Vision Pro;
+- load house/site USDZ exports on Vision Pro;
 - choose among multiple design options, initially Designs 01, 02, and 03;
 - switch models without losing Prospector's useful navigation behavior;
 - inspect designs at authored scale using a game controller, head-relative movement, vertical movement, terrain follow, and visibility controls.
