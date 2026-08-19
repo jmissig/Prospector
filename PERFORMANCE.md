@@ -1,109 +1,63 @@
 # Performance review
 
-This note records the code-review findings from August 2026. It is a prioritized investigation backlog, not a claim that every item is a measured bottleneck. Validate changes with a representative architectural USDZ on Apple Vision Pro before optimizing broadly.
+This is Prospector's active performance backlog. Validate optimizations with representative architectural USDZs on Apple Vision Pro and preserve the authored model geometry and current all-mesh collision behavior unless a separate product decision changes that requirement.
 
-The `.prospector` document path itself is not an obvious performance concern. It uses standard Foundation file coordination and security-scoped access, decodes the small JSON manifest away from the main actor, and hands model URLs to RealityKit's asynchronous loading APIs. The likely costs begin when RealityKit loads, preprocesses, collides, and renders the model.
+The `.prospector` document path is not an obvious bottleneck: manifest decoding runs away from the main actor, package access uses standard Foundation coordination and security scopes, and RealityKit loads model URLs asynchronously. The likely costs begin when RealityKit loads, preprocesses, collides, and renders a model.
 
-## Priority findings
+## Active investigations
 
-### 1. High: exact collision generation may dominate loading
+### Preprocess exact collision meshes on the Mac
 
-`ImmersiveView.generateStaticMeshCollisionShapes(for:)` walks the complete entity hierarchy and generates an exact static-mesh collision shape for every `ModelEntity`. Large architectural/site models can contain many meshes and substantial geometry, making this preprocessing expensive in both time and memory.
+Prospector currently walks every `ModelEntity` and calls `ShapeResource.generateStaticMesh(from:)`. Vision Pro testing confirms model loading is noticeable but completes in less than a minute; USDZ decoding and collision-generation time have not yet been measured separately.
 
-The first v1.1 Vision Pro test confirmed that loading a real design has a noticeable delay but completes in less than a minute. It was not obnoxious enough to be the most urgent usability issue, but remains worth improving. The test did not separate USDZ decoding from collision generation, so the exact share attributable to collision preprocessing is still unmeasured.
-
-Collision traversal now checks cancellation before processing each entity and after asynchronous static-mesh generation. Model replacement also serializes load operations, so a newer request waits for the canceled request to finish cleanup before beginning another USDZ load. RealityKit's individual static-mesh operation may still take time to return after cancellation, so its cost remains a profiling target.
-
-Recommended investigation:
-
-- Profile collision preprocessing separately from USDZ decoding.
-- Preserve the current behavior of generating exact static-mesh collisions for every `ModelEntity`; do not assume a terrain-only or simplified collision model.
-- Prototype a Mac-side preprocessor that performs the same all-mesh collision generation once and exports a compiled RealityKit entity hierarchy beside the USDZ in the `.prospector` package.
-- Measure whether loading that preprocessed artifact avoids the Vision Pro collision-generation delay while preserving collision and raycast behavior exactly.
-- Record cache provenance or a source-model fingerprint so stale preprocessed output is not mistaken for current geometry.
+- Profile USDZ loading and collision generation independently.
+- Prototype a Mac-side tool that performs the same exact all-mesh collision generation once and exports a compiled RealityKit entity hierarchy beside the USDZ in the `.prospector` package.
+- Verify that the compiled artifact preserves visuals, hierarchy, transforms, collisions, and raycast behavior on visionOS.
+- Record a source-model fingerprint and generator version so stale output is never mistaken for current geometry.
+- Compare preprocessing time, package size, Vision Pro load time, and peak memory with the current path.
 
 Relevant code: `Prospector/ImmersiveView.swift`, `loadModel` and `generateStaticMeshCollisionShapes`.
 
-### 2. Addressed: switching temporarily retained two complete models
+### Measure controller-driven SwiftUI invalidation
 
-Model replacement now records and flushes the outgoing pose, removes the active entity, and clears its retained model and rotation state before beginning replacement USDZ loading. The immersive environment is intentionally empty while the replacement loads, and a failed replacement leaves the old model unloaded rather than restoring its memory cost.
+Navigation position, yaw, and height already live in a non-observed runtime object, and stationary frames avoid device-pose queries and model-transform assignments. Continuous controller axes are still `@Published` by `GameControllerManager`, so they may invalidate SwiftUI while moving.
 
-Replacement requests are serialized. Rapid A → B → C selection cancels obsolete work, waits for its cleanup, and allows only the current request to attach an entity.
+- Use SwiftUI Instruments to measure body updates during sustained stick and trigger input.
+- If measurable, keep continuous axes in a non-observed runtime store and publish only discrete UI state such as controller identity and mode changes.
 
-Validation still required on Vision Pro:
+Relevant code: `Prospector/GameControllerManager.swift` and the `SceneEvents.Update` handler in `Prospector/ImmersiveView.swift`.
 
-- Compare peak resident memory while switching between the two largest representative models.
-- Confirm the old entity disappears before replacement loading and that only the final model attaches after rapid selection changes.
-- Confirm a failed replacement leaves the scene empty and presents the existing load error.
+### Profile authored model and rendering cost
 
-Relevant code: `Prospector/ImmersiveView.swift`, `loadModel`.
+Rendering cost still depends on entity and mesh-part counts, triangles, materials, texture sizes, transparency/overdraw, collider complexity, and the bundled 4096×2048 environment texture.
 
-### 3. Medium-high: hot movement state may invalidate SwiftUI
+- Capture draw calls, triangles, GPU time, dropped frames, RealityKit Physics CPU, and steady-state memory while walking representative models.
+- Measure terrain-follow raycasts during continuous movement; throttle by elapsed time or distance only if they are a demonstrated cost.
+- Treat asset-side changes as an explicit export decision and leave authoritative private source models untouched.
 
-Position, yaw, and height are SwiftUI `@State` values mutated from the RealityKit scene-update callback. Controller axes are `@Published` values on an `ObservableObject` and can change frequently. This may trigger unnecessary SwiftUI invalidation during continuous movement even though most of this data only drives RealityKit transforms.
+## Current baseline
 
-Recommended investigation:
+- Only one app-owned model is retained or loaded at a time; replacement work is serialized and stale requests are canceled.
+- ARKit startup, hand updates, scene subscriptions, and teardown have explicit task ownership and call `ARKitSession.stop()` on exit.
+- Navigation-space bounds are cached at load time, and stationary scene updates skip unnecessary device-pose and transform work.
+- Z-up USDZ collision probing correctly transforms ray endpoints, hit positions, normals, bounds, scale, and the viewer's physical X/Z position.
+- Manifest decoding, asynchronous RealityKit loading, and retained package security scope have no observed ongoing performance problem.
 
-- Use SwiftUI Instruments to confirm whether controller input or per-frame movement causes frequent body updates.
-- Move frame-hot runtime values into a non-observed reference object, RealityKit component/system, or another runtime store that does not invalidate the view.
-- Keep only state that actually affects SwiftUI controls or overlays observable.
+## Profiling pass
 
-Relevant code: `Prospector/ImmersiveView.swift` state and scene-update subscription; `Prospector/GameControllerManager.swift` published inputs.
-
-### 4. Addressed: stationary scene updates avoid navigation work
-
-The update callback now queries the device anchor only when horizontal movement or an explicit terrain-height reset needs head orientation or physical X/Z displacement. It also tracks navigation transform dirtiness and rebuilds/assigns the model transform only after movement, virtual turning, height changes, initial model placement, saved-location jumps, or reset-to-start actions.
-
-The model's navigation-space bounds are computed once at load time and reused by terrain-follow and height-reset raycasts. This removes the former per-probe `visualBounds` calculation and also accounts for imported root rotation, translation, and scale.
-
-Validation still required on Vision Pro:
-
-- Use RealityKit Trace or Time Profiler to compare stationary and continuous-movement update cost.
-- If terrain raycasts are measurable during continuous movement, consider throttling them by elapsed time or distance traveled while retaining acceptable ground following.
-
-Relevant code: `Prospector/ImmersiveView.swift`, the `SceneEvents.Update` handler and `terrainSurfaceHeight`.
-
-### 5. Addressed: ARKit startup and shutdown are explicitly controlled
-
-World/hand tracking startup and hand-anchor consumption now use owned tasks. Startup checks cancellation after authorization and session startup. The shared immersive teardown path cancels startup and hand-update tasks, calls `ARKitSession.stop()`, clears provider references, resets pinch state, cancels RealityKit/model-loading work, and releases the current entity.
-
-Validation still required on Vision Pro:
-
-- Exit while authorization or session startup is pending and confirm no provider resumes afterward.
-- Repeat enter/exit cycles and confirm one session, one hand-update consumer, and one RealityKit update subscription per immersive presentation.
-- Confirm world-relative movement and hand visibility toggling still work after re-entry.
-
-Relevant code: `Prospector/ImmersiveView.swift`, RealityView setup and `onDisappear`.
-
-### 6. Trace-dependent: USDZ complexity may dominate rendering
-
-RealityKit handles rendering, but performance still depends heavily on the authored asset: entity and mesh-part counts, triangle count, material count, texture sizes, transparency/overdraw, and collider complexity. The bundled `meadow_2_4k.exr` is about 22 MB on disk and should be included in memory measurements, although model structure and collision generation are the higher-priority suspects.
-
-Do not silently rescale, simplify, or rewrite private source models as part of routine viewer optimization. If asset-side changes prove necessary, treat them as an explicit export/profile decision and preserve the authored source of truth.
-
-## What already looks sound
-
-- Manifest coordination and decoding do not run on the main actor.
-- RealityKit model loading is asynchronous.
-- At most one app-owned model entity is retained or loading at a time.
-- The launch-window picker has a small, stable data set and no expensive render-time transformations.
-- Retaining security-scoped access for the active package has no obvious ongoing performance cost.
-
-## Measurement plan
-
-Run the first profiling pass on Apple Vision Pro with representative large models. Exercise three scenarios:
+On Vision Pro, exercise:
 
 1. Open a package and load its default model.
-2. Walk continuously with terrain follow enabled, including changes in elevation.
+2. Walk continuously with terrain follow enabled across elevation changes.
 3. Switch repeatedly between the two largest models, then exit and re-enter immersive space.
 
-Capture at least:
+Capture:
 
-- model load duration, split where possible into USDZ load and collision preprocessing;
+- USDZ load and collision-preprocessing duration;
 - peak and steady-state memory;
-- Entity Commits and SwiftUI view updates;
+- Entity Commits and SwiftUI body updates;
 - RealityKit Physics CPU time;
 - draw calls, triangles, GPU time, and dropped frames;
-- retained ARKit providers/tasks after immersive-space exit.
+- retained ARKit providers, tasks, or subscriptions after immersive exit.
 
-Use RealityKit Trace and SwiftUI Instruments. Optimize the largest measured cost first, then repeat the same capture to verify the change rather than relying on code-level intuition alone.
+Use RealityKit Trace, Time Profiler, and SwiftUI Instruments. Optimize the largest measured cost first and repeat the same capture after each change.

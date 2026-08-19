@@ -6,6 +6,17 @@ This is a small fork of Christian's app. Christian says:
 
 > I built this for myself (well, I vibe coded it so if any code is janky please don't yell at me), so it's rough around the edges and not the most straightforward to use, but it should be a fun starting point if you want to explore your own large models in an immersive space.
 
+## What's added in this fork
+
+This fork keeps Christian's controller-driven USDZ viewer and adds:
+
+- **Multi-model document packages.** Open one local `.prospector` package from Files to load and switch among multiple USDZ models without embedding private assets in the app.
+- **Persistent model state and saved locations.** Each model keeps its own resume position and named locations in a readable JSON sidecar. Add locations in immersive view and jump among them with the panel or controller.
+- **In-app controller guidance.** A spatial cheat sheet uses the connected controller's labels and glyphs when available, while brief HUD messages confirm location jumps and mode changes.
+- **Progressive immersion.** Use the Digital Crown to move between a peripheral view of the real world and full immersion.
+- **Faster, safer model lifecycles.** Model switching releases the outgoing model before loading its replacement, cancels stale work, and manages RealityKit and ARKit resources explicitly.
+- **Architectural USDZ coordinate fixes.** Collision probing and terrain following correctly account for Z-up USDZ files, imported root transforms, model scale, and the viewer's physical position.
+
 ## Setup
 
 1. Set your development team in the project's Signing & Capabilities settings.
@@ -16,7 +27,7 @@ Prospector opens the package, selects its default model, and makes every model i
 
 The immersive view starts partially immersed. Turn the Digital Crown to reveal more of the real world around the periphery or expand the model to full immersion.
 
-By default, Prospector resumes each model's last position. Turn off **Resume last positions** to use the manifest defaults instead, or choose **Reset to Starting Position** while immersed.
+Prospector automatically resumes each model's last position when saved state is available, otherwise it uses the model's manifest starting position.
 
 The repository remains asset-free. A placeholder bundled-model catalog is available for development, but normal use does not require embedding USDZ files in the app or committing them to Git.
 
