@@ -79,6 +79,12 @@ Pair a game controller (e.g. a DualSense or Xbox controller) with your Vision Pr
 
 You can also pinch your thumb and middle finger together for half a second (either hand) to toggle the model's visibility.
 
+## Development
+
+See [PERFORMANCE.md](PERFORMANCE.md) for the current performance review and Vision Pro profiling plan.
+
+See [TODO.md](TODO.md) for planned navigation persistence, saved positions, and immersion-mode investigations.
+
 ## Credits
 
 The environment skybox is the [Meadow 2](https://polyhaven.com/a/meadow_2) HDRI from Poly Haven (CC0).
