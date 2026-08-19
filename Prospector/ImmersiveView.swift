@@ -321,7 +321,9 @@ struct ImmersiveView: View {
                     Label("Close saved locations", systemImage: "xmark")
                         .labelStyle(.iconOnly)
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.circle)
+                .controlSize(.large)
             }
 
             if modelSelection.savedLocations.isEmpty {
@@ -338,6 +340,8 @@ struct ImmersiveView: View {
                             Button(location.name) {
                                 jump(to: location)
                             }
+                            .buttonStyle(.bordered)
+                            .buttonBorderShape(.roundedRectangle)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
@@ -355,9 +359,9 @@ struct ImmersiveView: View {
             }
             .buttonStyle(.borderedProminent)
         }
-        .padding(20)
+        .padding(24)
         .frame(width: 420)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24))
+        .glassBackgroundEffect(in: .rect(cornerRadius: 32))
     }
 
     @MainActor
