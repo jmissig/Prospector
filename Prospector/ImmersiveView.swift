@@ -112,11 +112,14 @@ struct ImmersiveView: View {
                 let speedMultiplier = controllerManager.speedModeEnabled ? speedModeMultiplier : 1
                 var poseChanged = false
                 
-                // Get the physical headset pose. Its yaw steers movement, while its
-                // X/Z displacement moves the terrain probe under the user's real position.
+                // Query the physical headset only when an action needs it. Its yaw steers
+                // horizontal movement, while its X/Z displacement positions terrain probes
+                // under the user's real location.
                 var headYaw: Float = 0
                 var devicePosition = SIMD3<Float>.zero
-                if let worldTracking = worldTracking,
+                let needsDevicePose = movement != .zero || controllerManager.shouldResetHeight
+                if needsDevicePose,
+                   let worldTracking = worldTracking,
                    let deviceAnchor = worldTracking.queryDeviceAnchor(atTimestamp: CACurrentMediaTime()) {
                     let deviceTransform = deviceAnchor.originFromAnchorTransform
                     devicePosition = SIMD3<Float>(
@@ -129,8 +132,6 @@ struct ImmersiveView: View {
                                               deviceTransform.columns.2.z)
                     headYaw = atan2(forward.x, forward.z)
                 }
-                
-                var transform = entity.transform
                 
                 // Handle height reset
                 if controllerManager.shouldResetHeight {
@@ -194,25 +195,35 @@ struct ImmersiveView: View {
                     poseChanged = true
                 }
 
-                let yawRotation = simd_quatf(
-                    angle: -navigationRuntime.virtualYaw,
-                    axis: SIMD3<Float>(0, 1, 0)
-                )
-                let rotatedPosition = simd_act(yawRotation, navigationRuntime.playerPosition)
-                if let modelCoordinateSpace {
-                    let navigationAdjustment = Transform(
-                        rotation: yawRotation,
-                        translation: -rotatedPosition
-                    )
-                    transform = Transform(
-                        matrix: navigationAdjustment.matrix * modelCoordinateSpace.navigationFromModel
-                    )
-                } else {
-                    transform.translation = -rotatedPosition
-                    transform.rotation = yawRotation
+                if poseChanged {
+                    navigationRuntime.isTransformDirty = true
                 }
-                
-                entity.transform = transform
+
+                if navigationRuntime.isTransformDirty {
+                    let yawRotation = simd_quatf(
+                        angle: -navigationRuntime.virtualYaw,
+                        axis: SIMD3<Float>(0, 1, 0)
+                    )
+                    let rotatedPosition = simd_act(yawRotation, navigationRuntime.playerPosition)
+                    let transform: Transform
+                    if let modelCoordinateSpace {
+                        let navigationAdjustment = Transform(
+                            rotation: yawRotation,
+                            translation: -rotatedPosition
+                        )
+                        transform = Transform(
+                            matrix: navigationAdjustment.matrix * modelCoordinateSpace.navigationFromModel
+                        )
+                    } else {
+                        transform = Transform(
+                            rotation: yawRotation,
+                            translation: -rotatedPosition
+                        )
+                    }
+
+                    entity.transform = transform
+                    navigationRuntime.isTransformDirty = false
+                }
 
                 if poseChanged {
                     recordCurrentPoseIfNeeded()
@@ -648,6 +659,7 @@ struct ImmersiveView: View {
     private func jump(to location: SavedLocation) {
         navigationRuntime.playerPosition = location.viewerPositionMeters.simdValue
         navigationRuntime.currentHeight = navigationRuntime.playerPosition.y
+        navigationRuntime.isTransformDirty = true
         activeSavedLocationID = location.id
         recordCurrentPose()
         showModeCue(location.name)
@@ -932,6 +944,7 @@ private final class NavigationRuntime {
     var playerPosition = SIMD3<Float>(0, 0, 0)
     var lastPersistenceSampleTime: TimeInterval = 0
     var wasPoseChanging = false
+    var isTransformDirty = true
 
     var pose: ViewerPose {
         ViewerPose(position: playerPosition, yawRadians: virtualYaw)
@@ -943,5 +956,6 @@ private final class NavigationRuntime {
         virtualYaw = pose.yaw
         lastPersistenceSampleTime = CACurrentMediaTime()
         wasPoseChanging = false
+        isTransformDirty = true
     }
 }

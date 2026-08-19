@@ -50,20 +50,16 @@ Recommended investigation:
 
 Relevant code: `Prospector/ImmersiveView.swift` state and scene-update subscription; `Prospector/GameControllerManager.swift` published inputs.
 
-### 4. Medium: avoidable work occurs every scene update
+### 4. Addressed: stationary scene updates avoid navigation work
 
-The update callback currently:
+The update callback now queries the device anchor only when horizontal movement or an explicit terrain-height reset needs head orientation or physical X/Z displacement. It also tracks navigation transform dirtiness and rebuilds/assigns the model transform only after movement, virtual turning, height changes, initial model placement, saved-location jumps, or reset-to-start actions.
 
-- queries the device anchor for head orientation even when the player is stationary;
-- creates and assigns an entity transform even when no movement, rotation, height, or visibility changed.
+The model's navigation-space bounds are computed once at load time and reused by terrain-follow and height-reset raycasts. This removes the former per-probe `visualBounds` calculation and also accounts for imported root rotation, translation, and scale.
 
-The model's navigation-space bounds are now computed once at load time and reused by terrain-follow and height-reset raycasts. This removes the former per-probe `visualBounds` calculation and also accounts for imported root rotation, translation, and scale.
+Validation still required on Vision Pro:
 
-Recommended investigation:
-
-- Query head orientation only when horizontal movement needs it.
-- Track whether pose state changed and assign the entity transform only when dirty.
-- If terrain raycasts are measurable, throttle them by elapsed time or distance traveled while retaining acceptable ground following.
+- Use RealityKit Trace or Time Profiler to compare stationary and continuous-movement update cost.
+- If terrain raycasts are measurable during continuous movement, consider throttling them by elapsed time or distance traveled while retaining acceptable ground following.
 
 Relevant code: `Prospector/ImmersiveView.swift`, the `SceneEvents.Update` handler and `terrainSurfaceHeight`.
 
