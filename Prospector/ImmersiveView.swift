@@ -14,6 +14,7 @@ struct ImmersiveView: View {
 
     @StateObject private var controllerManager = GameControllerManager()
     @State private var contentRoot: Entity?
+    @State private var interfaceAnchor: AnchorEntity?
     @State private var isRealityViewReady = false
     @State private var sceneEntity: Entity?
     @State private var loadedModel: ModelDescriptor?
@@ -47,12 +48,25 @@ struct ImmersiveView: View {
     let pinchOnDistance: Float = 0.02
     let pinchOffDistance: Float = 0.03
     let pinchHoldDuration: TimeInterval = 0.5
+    let locationsPanelPosition = SIMD3<Float>(-0.55, -0.02, -1.0)
+    let controllerGuidePosition = SIMD3<Float>(0, -0.43, -1.0)
+
+    private enum ImmersiveAttachment: Hashable {
+        case locations
+        case controllerGuide
+    }
     
     var body: some View {
-        RealityView { content in
+        RealityView { content, attachments in
             let root = Entity()
             content.add(root)
             contentRoot = root
+
+            let anchor = AnchorEntity(.head)
+            content.add(anchor)
+            interfaceAnchor = anchor
+            attachPanels(attachments, to: anchor)
+
             isImmersiveActive = true
             isRealityViewReady = true
             
@@ -188,6 +202,22 @@ struct ImmersiveView: View {
                 }
                 navigationRuntime.wasPoseChanging = poseChanged
             }
+        } update: { _, attachments in
+            guard let interfaceAnchor else { return }
+            attachPanels(attachments, to: interfaceAnchor)
+        } attachments: {
+            Attachment(id: ImmersiveAttachment.locations) {
+                if isLocationsPanelPresented {
+                    locationsPanel
+                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                }
+            }
+            Attachment(id: ImmersiveAttachment.controllerGuide) {
+                if isLocationsPanelPresented {
+                    ControllerGuideView(presentation: controllerManager.presentation)
+                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                }
+            }
         }
         .task(id: ModelLoadRequest(
             model: modelSelection.selectedModel,
@@ -204,11 +234,7 @@ struct ImmersiveView: View {
             setLocationsPanelPresented(!isLocationsPanelPresented)
         }
         .overlay(alignment: .top) {
-            if isLocationsPanelPresented {
-                locationsPanel
-                    .padding(.top, 60)
-                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
-            } else if let modeCueText {
+            if !isLocationsPanelPresented, let modeCueText {
                 Text(modeCueText)
                     .font(.headline)
                     .padding(.horizontal, 18)
@@ -297,6 +323,23 @@ struct ImmersiveView: View {
         .padding(20)
         .frame(width: 420)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24))
+    }
+
+    @MainActor
+    private func attachPanels(_ attachments: RealityViewAttachments, to anchor: Entity) {
+        if let locations = attachments.entity(for: ImmersiveAttachment.locations) {
+            locations.position = locationsPanelPosition
+            if locations.parent == nil {
+                anchor.addChild(locations)
+            }
+        }
+
+        if let controllerGuide = attachments.entity(for: ImmersiveAttachment.controllerGuide) {
+            controllerGuide.position = controllerGuidePosition
+            if controllerGuide.parent == nil {
+                anchor.addChild(controllerGuide)
+            }
+        }
     }
 
     @MainActor
@@ -463,6 +506,8 @@ struct ImmersiveView: View {
         modeCueTask = nil
         modeCueText = nil
         contentRoot = nil
+        interfaceAnchor?.removeFromParent()
+        interfaceAnchor = nil
         modelSelection.loadState = .idle
         setLocationsPanelPresented(false)
 

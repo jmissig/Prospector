@@ -59,7 +59,7 @@ For development builds, you can still drag USDZ files into the `Prospector` fold
 
 ## Controls
 
-Pair a game controller (e.g. a DualSense or Xbox controller) with your Vision Pro. Movement is relative to the direction you're looking.
+Pair a game controller (e.g. a Nintendo Switch Pro Controller, DualSense, or Xbox controller) with your Vision Pro. Movement is relative to the direction you're looking.
 
 | Input | Action |
 | --- | --- |
@@ -72,7 +72,9 @@ Pair a game controller (e.g. a DualSense or Xbox controller) with your Vision Pr
 | A | Show or dismiss saved locations |
 | X / Y | Jump to the previous / next saved location |
 
-Single-tap in the immersive view to show the saved-locations panel. While it is visible, movement and turning inputs are paused; use look-and-pinch to choose a location, add the current position, delete a location, or dismiss the panel. Press A again for a reliable controller-only dismissal.
+Single-tap in the immersive view to show the saved-locations panel on the left. A separate controller guide appears below your view, using the connected controller's own button labels and glyphs when available. It includes the stick, trigger, and complete D-pad mapping so the controls do not need to be memorized.
+
+While the panels are visible, movement and turning inputs are paused; use look-and-pinch to choose a location, add the current position, delete a location, or dismiss the locations panel. Press A again for a reliable controller-only dismissal.
 
 You can also pinch your thumb and middle finger together for half a second (either hand) to toggle the model's visibility.
 
