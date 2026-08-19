@@ -44,7 +44,6 @@ class GameControllerManager: ObservableObject {
     @Published var movementVector = SIMD2<Float>(0, 0)
     @Published var lookVector = SIMD2<Float>(0, 0)
     @Published var heightAdjustment: Float = 0
-    @Published var shouldResetHeight = false
     @Published var resetHeightRevision = 0
     @Published var terrainFollowEnabled = false
     @Published var speedModeEnabled = false
@@ -174,11 +173,6 @@ class GameControllerManager: ObservableObject {
             guard let self = self else { return }
             if pressed && self.navigationEnabled {
                 self.resetHeightRevision += 1
-                self.shouldResetHeight = true
-                // Reset the flag after a short delay to ensure it's processed
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    self.shouldResetHeight = false
-                }
             }
         }
 
@@ -282,7 +276,6 @@ class GameControllerManager: ObservableObject {
         movementVector = .zero
         lookVector = .zero
         heightAdjustment = 0
-        shouldResetHeight = false
     }
     
     deinit {

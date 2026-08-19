@@ -24,11 +24,11 @@ This is the product and engineering backlog for Prospector. Performance-specific
 
 ## Navigation
 
-### Harden height reset and terrain follow
+### Verify session floor calibration
 
-- Make D-pad **Up** edge-triggered so one press produces one reset instead of being processed on several scene-update frames.
-- Preserve the current height when no upward-facing collision surface is found instead of falling back to zero.
-- Verify terrain follow across flat ground, slopes, stairs, and overhangs. The corrected Z-up/model-space transforms and D-pad reset already work in Vision Pro testing.
+- Prospector now attempts **Land on Surface** once after a model first loads in an immersive session, then reuses the resulting per-model vertical offset when jumping among saved locations.
+- Verify that one successful manual reset brings subsequent saved locations close to their intended height without changing their stored JSON coordinates.
+- Verify automatic calibration, model switching, flat ground, upper floors, slopes, stairs, overhangs, and locations where no upward-facing surface is found.
 
 ## Immersion and window lifecycle
 

@@ -48,7 +48,6 @@ struct ImmersiveView: View {
     let speedModeMultiplier: Float = 6.0
     let heightSpeed: Float = 1.5
     let lookRotationSpeed: Float = 2.25
-    let defaultHeight: Float = 0
     let terrainProbeHeight: Float = 1.5
     let minimumWalkableNormalY: Float = 0.35
     let pinchOnDistance: Float = 0.02
@@ -134,10 +133,17 @@ struct ImmersiveView: View {
                 // under the user's real location.
                 var headYaw: Float = 0
                 var devicePosition = SIMD3<Float>.zero
-                let needsDevicePose = movement != .zero || controllerManager.shouldResetHeight
+                let shouldResetHeight = controllerManager.resetHeightRevision
+                    != navigationRuntime.handledResetHeightRevision
+                let needsInitialSurfaceCalibration = navigationRuntime.needsInitialSurfaceCalibration
+                let needsDevicePose = movement != .zero
+                    || shouldResetHeight
+                    || needsInitialSurfaceCalibration
+                var hasDevicePose = false
                 if needsDevicePose,
                    let worldTracking = worldTracking,
                    let deviceAnchor = worldTracking.queryDeviceAnchor(atTimestamp: CACurrentMediaTime()) {
+                    hasDevicePose = true
                     let deviceTransform = deviceAnchor.originFromAnchorTransform
                     devicePosition = SIMD3<Float>(
                         deviceTransform.columns.3.x,
@@ -151,15 +157,33 @@ struct ImmersiveView: View {
                 }
                 
                 // Handle height reset
-                if controllerManager.shouldResetHeight {
-                    navigationRuntime.currentHeight = terrainSurfaceHeight(
+                if shouldResetHeight {
+                    navigationRuntime.handledResetHeightRevision = controllerManager.resetHeightRevision
+                    if let terrainHeight = terrainSurfaceHeight(
                         below: navigationRuntime.playerPosition,
                         physicalDevicePosition: devicePosition,
                         virtualYaw: navigationRuntime.virtualYaw,
                         in: entity
-                    ) ?? defaultHeight
-                    navigationRuntime.playerPosition.y = navigationRuntime.currentHeight
-                    poseChanged = true
+                    ) {
+                        navigationRuntime.calibrateVerticalOffset(to: terrainHeight)
+                        poseChanged = true
+                    }
+                }
+
+                // Saved Y values remain stable reference coordinates. The first successful
+                // surface probe for each model establishes a runtime-only session offset,
+                // reused whenever Prospector jumps among that model's saved locations.
+                if needsInitialSurfaceCalibration, hasDevicePose {
+                    navigationRuntime.consumeInitialSurfaceCalibrationAttempt()
+                    if let terrainHeight = terrainSurfaceHeight(
+                        below: navigationRuntime.playerPosition,
+                        physicalDevicePosition: devicePosition,
+                        virtualYaw: navigationRuntime.virtualYaw,
+                        in: entity
+                    ) {
+                        navigationRuntime.calibrateVerticalOffset(to: terrainHeight)
+                        poseChanged = true
+                    }
                 }
                 
                 // Handle height adjustment from shoulder buttons
@@ -376,7 +400,7 @@ struct ImmersiveView: View {
 
             Button("Add Location", systemImage: "plus") {
                 if let location = modelSelection.addSavedLocation(
-                    position: navigationRuntime.playerPosition,
+                    position: navigationRuntime.positionForPersistence,
                     for: modelSelection.selectedModel
                 ) {
                     activeSavedLocationID = location.id
@@ -520,7 +544,7 @@ struct ImmersiveView: View {
         modelSelection.loadState = .loading(modelID: model.id)
 
         if let loadedModel {
-            modelSelection.recordPose(navigationRuntime.pose, for: loadedModel)
+            modelSelection.recordPose(navigationRuntime.poseForPersistence, for: loadedModel)
             await modelSelection.flushPositionPersistence()
         }
 
@@ -550,8 +574,11 @@ struct ImmersiveView: View {
                 importedRootTransform: entity.transform,
                 modelBounds: entity.visualBounds(relativeTo: entity)
             )
-            navigationRuntime.apply(modelSelection.poseForLoading(model))
-            modelSelection.recordPose(navigationRuntime.pose, for: model)
+            navigationRuntime.beginModel(
+                model.id,
+                at: modelSelection.poseForLoading(model)
+            )
+            modelSelection.recordPose(navigationRuntime.poseForPersistence, for: model)
             modelSelection.loadState = .loaded(modelID: model.id)
         } catch is CancellationError {
             return
@@ -579,6 +606,7 @@ struct ImmersiveView: View {
         sceneEntity = nil
         loadedModel = nil
         modelCoordinateSpace = nil
+        navigationRuntime.endModel()
         navigationRuntime.wasPoseChanging = false
     }
 
@@ -666,6 +694,7 @@ struct ImmersiveView: View {
         isHUDPlacementPending = false
         modelSelection.loadState = .idle
         setLocationsPanelPresented(false)
+        navigationRuntime.resetSessionCalibration()
 
         Task {
             await modelSelection.flushPositionPersistence()
@@ -754,14 +783,14 @@ struct ImmersiveView: View {
     @MainActor
     private func recordCurrentPose() {
         guard let loadedModel else { return }
-        modelSelection.recordPose(navigationRuntime.pose, for: loadedModel)
+        modelSelection.recordPose(navigationRuntime.poseForPersistence, for: loadedModel)
     }
 
     @MainActor
     private func resetToStartingPosition() {
         guard let loadedModel else { return }
 
-        navigationRuntime.apply(loadedModel.startPose ?? .origin)
+        navigationRuntime.applyReferencePose(loadedModel.startPose ?? .origin)
         recordCurrentPose()
         Task {
             await modelSelection.flushPositionPersistence()
@@ -793,9 +822,7 @@ struct ImmersiveView: View {
 
     @MainActor
     private func jump(to location: SavedLocation) {
-        navigationRuntime.playerPosition = location.viewerPositionMeters.simdValue
-        navigationRuntime.currentHeight = navigationRuntime.playerPosition.y
-        navigationRuntime.isTransformDirty = true
+        navigationRuntime.applyReferencePosition(location.viewerPositionMeters.simdValue)
         activeSavedLocationID = location.id
         recordCurrentPose()
         showModeCue(location.name)
@@ -1066,20 +1093,83 @@ private final class NavigationRuntime {
     var currentHeight: Float = 0
     var virtualYaw: Float = 0
     var playerPosition = SIMD3<Float>(0, 0, 0)
+    var handledResetHeightRevision = 0
     var lastPersistenceSampleTime: TimeInterval = 0
     var wasPoseChanging = false
     var isTransformDirty = true
+    private var isInitialSurfaceCalibrationPending = false
+    private var initialSurfaceCalibrationDeadline: TimeInterval = 0
 
-    var pose: ViewerPose {
-        ViewerPose(position: playerPosition, yawRadians: virtualYaw)
+    private var currentModelID: String?
+    private var verticalCalibrationOffsets: [String: Float] = [:]
+    private var calibratedModelIDs: Set<String> = []
+
+    private var verticalCalibrationOffset: Float {
+        guard let currentModelID else { return 0 }
+        return verticalCalibrationOffsets[currentModelID, default: 0]
     }
 
-    func apply(_ pose: ViewerPose) {
-        playerPosition = pose.position
-        currentHeight = playerPosition.y
+    var needsInitialSurfaceCalibration: Bool {
+        isInitialSurfaceCalibrationPending
+            && CACurrentMediaTime() <= initialSurfaceCalibrationDeadline
+    }
+
+    var poseForPersistence: ViewerPose {
+        ViewerPose(position: positionForPersistence, yawRadians: virtualYaw)
+    }
+
+    var positionForPersistence: SIMD3<Float> {
+        var position = playerPosition
+        position.y -= verticalCalibrationOffset
+        return position
+    }
+
+    func beginModel(_ modelID: String, at pose: ViewerPose) {
+        currentModelID = modelID
+        isInitialSurfaceCalibrationPending = !calibratedModelIDs.contains(modelID)
+        initialSurfaceCalibrationDeadline = CACurrentMediaTime() + 5
+        applyReferencePose(pose)
+    }
+
+    func endModel() {
+        currentModelID = nil
+        isInitialSurfaceCalibrationPending = false
+    }
+
+    func applyReferencePose(_ pose: ViewerPose) {
+        applyReferencePosition(pose.position)
         virtualYaw = pose.yaw
+    }
+
+    func applyReferencePosition(_ position: SIMD3<Float>) {
+        playerPosition = position
+        playerPosition.y += verticalCalibrationOffset
+        currentHeight = playerPosition.y
         lastPersistenceSampleTime = CACurrentMediaTime()
         wasPoseChanging = false
         isTransformDirty = true
+    }
+
+    func calibrateVerticalOffset(to surfaceHeight: Float) {
+        guard let currentModelID else { return }
+
+        let referenceHeight = playerPosition.y - verticalCalibrationOffset
+        verticalCalibrationOffsets[currentModelID] = surfaceHeight - referenceHeight
+        calibratedModelIDs.insert(currentModelID)
+        isInitialSurfaceCalibrationPending = false
+        playerPosition.y = surfaceHeight
+        currentHeight = surfaceHeight
+        isTransformDirty = true
+    }
+
+    func consumeInitialSurfaceCalibrationAttempt() {
+        isInitialSurfaceCalibrationPending = false
+    }
+
+    func resetSessionCalibration() {
+        currentModelID = nil
+        verticalCalibrationOffsets.removeAll()
+        calibratedModelIDs.removeAll()
+        isInitialSurfaceCalibrationPending = false
     }
 }
