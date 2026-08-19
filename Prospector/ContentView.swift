@@ -34,14 +34,6 @@ struct ContentView: View {
             }
             .disabled(modelSelection.models.count < 2 || modelSelection.isOpeningDocument)
 
-            Toggle("Resume last positions", isOn: $modelSelection.resumeLastPositions)
-                .disabled(modelSelection.documentName == nil)
-
-            Button("Reset to Starting Position") {
-                modelSelection.requestResetToStartingPosition()
-            }
-            .disabled(!isSelectedModelLoaded || !showImmersiveSpace)
-
             documentStatus
             loadStatus
 
@@ -57,9 +49,13 @@ struct ContentView: View {
                 }
             }
             .font(.title)
+
+            Text("Version \(appVersion)")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
         }
         .padding()
-        .frame(width: 460, height: 420)
+        .frame(width: 460, height: 340)
     }
 
     @ViewBuilder
@@ -99,8 +95,8 @@ struct ContentView: View {
         }
     }
 
-    private var isSelectedModelLoaded: Bool {
-        modelSelection.loadState == .loaded(modelID: modelSelection.selectedModel.id)
+    private var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
     }
 }
 
