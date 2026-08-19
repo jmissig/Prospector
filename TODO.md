@@ -35,6 +35,7 @@ This is the product and engineering backlog for Prospector. Performance-specific
 ### Decide what happens to the launch window during immersion
 
 - The launch window remains visible while immersive space is active; moving it aside is acceptable for now.
+- Prospector starts windowed, dismisses immersion when the launch window disappears or the app backgrounds, and synchronizes the button from the immersive scene's actual appearance/disappearance. Verify fresh launch, closing the window, and switching apps on Vision Pro, including transitions while an open request is still pending.
 - Explore standard visionOS behavior for dismissing, hiding, minimizing, or repurposing it while preserving model switching, loading errors, immersive exit, and a reliable way to restore the window.
 
 ### Tune progressive immersion on Vision Pro

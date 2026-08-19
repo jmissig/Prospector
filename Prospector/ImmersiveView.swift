@@ -10,7 +10,9 @@ import RealityKit
 import ARKit
 
 struct ImmersiveView: View {
+    @Environment(\.dismissImmersiveSpace) private var dismissImmersiveSpace
     let modelSelection: ModelSelection
+    let immersivePresentation: ImmersivePresentationState
 
     @StateObject private var controllerManager = GameControllerManager()
     @State private var contentRoot: Entity?
@@ -320,7 +322,15 @@ struct ImmersiveView: View {
             activeSavedLocationID = nil
         }
         .onDisappear {
+            immersivePresentation.immersiveViewDidDisappear()
             tearDownImmersiveView()
+        }
+        .onAppear {
+            guard immersivePresentation.immersiveViewDidAppear() else { return }
+            Task {
+                await dismissImmersiveSpace()
+                immersivePresentation.didFinishDismissal()
+            }
         }
     }
 
@@ -976,7 +986,10 @@ struct ImmersiveView: View {
 }
 
 #Preview {
-    ImmersiveView(modelSelection: ModelSelection())
+    ImmersiveView(
+        modelSelection: ModelSelection(),
+        immersivePresentation: ImmersivePresentationState()
+    )
 }
 
 private struct ModelLoadRequest: Equatable {
