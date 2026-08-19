@@ -12,7 +12,7 @@ Preserve upstream compatibility where it makes future merges easier, but optimiz
 
 ## Project brief
 
-Prospector is a private Apple Vision Pro viewer for walking through authored-scale house and terrain models in immersive space.
+Prospector is an Apple Vision Pro viewer for walking through authored-scale house and terrain models in immersive space. Private models are supplied at runtime in local `.prospector` document packages and must remain outside this public repository.
 
 The household use case is:
 
@@ -26,7 +26,7 @@ The immediate product slice is **model selection and switching**. Saved starting
 Source-of-truth boundaries:
 
 - The authored USDZ exports are the source of truth for house and terrain geometry, scale, orientation, and design content.
-- Copies bundled into the app are runtime assets, not a new modeling source of truth.
+- Copies bundled into the app or supplied in a `.prospector` package are runtime assets, not a new modeling source of truth.
 - Do not silently rescale, rotate, simplify, or rewrite model geometry to compensate for viewer behavior.
 - Keep model identity and display labels explicit in code rather than deriving product meaning from fragile filenames.
 
@@ -39,13 +39,14 @@ Non-goals:
 
 ## Current state
 
-Prospector is a small SwiftUI and RealityKit visionOS app targeting visionOS 2.5 or later.
+Prospector is a small SwiftUI and RealityKit visionOS app targeting visionOS 26.2 or later.
 
 - `Prospector/ContentView.swift` owns the small launch window.
-- `Prospector/ImmersiveView.swift` loads one bundled USDZ entity and owns immersive scene movement, collision probing, terrain follow, hand tracking, and mode cues.
+- `Prospector/ImmersiveView.swift` loads one selected bundled or package-hosted USDZ entity and owns immersive scene movement, collision probing, terrain follow, hand tracking, and mode cues.
 - `Prospector/GameControllerManager.swift` maps controller input.
 - `Prospector/ProspectorApp.swift` declares the window and immersive space.
-- The model name is currently a single hard-coded `ImmersiveView.modelName` placeholder.
+- `Prospector/ModelCatalog.swift` owns model selection and supports bundled and external file sources.
+- `Prospector/ProspectorDocument.swift` validates versioned `.prospector` package manifests and retains security-scoped access to their USDZ files.
 - The repository currently has no third-party package dependencies or test target.
 
 Preserve existing controller behavior unless the task explicitly changes it:
@@ -66,6 +67,8 @@ Preserve existing controller behavior unless the task explicitly changes it:
 - Preserve locomotion, collision generation, terrain probing, visibility state, and mode cues across the multi-model change unless a deliberate reset is part of the requested behavior.
 - Treat model-specific starting positions or placement adjustments as explicit per-model data when they are introduced; do not scatter filename checks through view code.
 - Surface asset-loading failures clearly. Do not add new force unwraps or `try!` calls for user-selected models.
+- Keep `.prospector` paths relative, contained within the package, and restricted to USDZ files. Do not weaken path or symlink validation.
+- Retain security-scoped package access for as long as any of its model URLs can be loaded, and balance every successful access call.
 - Keep model switching understandable from the launch window before adding custom immersive controls.
 - Prefer standard SwiftUI and visionOS controls (`Picker`, `Button`, `Form`, `Section`, ornaments where appropriate) and platform behavior before custom control chrome or fixed geometry.
 - Use semantic text styles and accessible labels. Keep custom UI narrow and justified by an actual immersive interaction need.

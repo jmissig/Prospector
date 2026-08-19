@@ -10,11 +10,11 @@ import RealityKit
 import ARKit
 
 struct ImmersiveView: View {
-    /// Name of the .usdz file (without extension) to display. Add your own
-    /// model to the Prospector folder in Xcode and set its name here.
-    static let modelName = "YourModelName"
+    let modelSelection: ModelSelection
 
     @StateObject private var controllerManager = GameControllerManager()
+    @State private var contentRoot: Entity?
+    @State private var isRealityViewReady = false
     @State private var sceneEntity: Entity?
     @State private var updateSubscription: EventSubscription?
     @State private var worldTracking: WorldTrackingProvider?
@@ -45,15 +45,10 @@ struct ImmersiveView: View {
     
     var body: some View {
         RealityView { content in
-            // Did you get a crash here? Did you actually import your entity file into Xcode? :)
-            let entity = try! await Entity(named: Self.modelName, in: Bundle.main)
-            await generateStaticMeshCollisionShapes(for: entity)
-            content.add(entity)
-            sceneEntity = entity
-            if baseRotation == nil {
-                baseRotation = entity.transform.rotation
-            }
-            entity.isEnabled = isContentVisible
+            let root = Entity()
+            content.add(root)
+            contentRoot = root
+            isRealityViewReady = true
             
             // Create environment sphere
             if let exrURL = Bundle.main.url(forResource: "meadow_2_4k", withExtension: "exr") {
@@ -193,6 +188,17 @@ struct ImmersiveView: View {
                 entity.transform = transform
             }
         }
+        .task(id: ModelLoadRequest(
+            model: modelSelection.selectedModel,
+            catalogRevision: modelSelection.catalogRevision,
+            isRealityViewReady: isRealityViewReady
+        )) {
+            guard isRealityViewReady else { return }
+            await loadModel(
+                modelSelection.selectedModel,
+                catalogRevision: modelSelection.catalogRevision
+            )
+        }
         .overlay(alignment: .top) {
             if let modeCueText {
                 Text(modeCueText)
@@ -214,8 +220,57 @@ struct ImmersiveView: View {
             updateSubscription?.cancel()
             handTrackingTask?.cancel()
             modeCueTask?.cancel()
+            sceneEntity = nil
+            contentRoot = nil
+            isRealityViewReady = false
+            modelSelection.loadState = .idle
             handTrackingTask = nil
             modeCueTask = nil
+        }
+    }
+
+    @MainActor
+    private func loadModel(_ model: ModelDescriptor, catalogRevision: Int) async {
+        guard let contentRoot else { return }
+
+        modelSelection.loadState = .loading(modelID: model.id)
+
+        do {
+            let entity: Entity
+            switch model.source {
+            case .bundled(let resourceName):
+                entity = try await Entity(named: resourceName, in: Bundle.main)
+            case .file(let url):
+                entity = try await Entity(contentsOf: url)
+            }
+            await generateStaticMeshCollisionShapes(for: entity)
+
+            guard !Task.isCancelled,
+                  modelSelection.selectedModel == model,
+                  modelSelection.catalogRevision == catalogRevision else {
+                return
+            }
+
+            entity.isEnabled = isContentVisible
+            let previousEntity = sceneEntity
+            previousEntity?.removeFromParent()
+            contentRoot.addChild(entity)
+            sceneEntity = entity
+            baseRotation = entity.transform.rotation
+            modelSelection.loadState = .loaded(modelID: model.id)
+        } catch is CancellationError {
+            return
+        } catch {
+            guard !Task.isCancelled,
+                  modelSelection.selectedModel == model,
+                  modelSelection.catalogRevision == catalogRevision else {
+                return
+            }
+
+            modelSelection.loadState = .failed(
+                modelID: model.id,
+                message: "Couldn’t load \(model.displayName): \(error.localizedDescription)"
+            )
         }
     }
     
@@ -392,5 +447,11 @@ struct ImmersiveView: View {
 }
 
 #Preview {
-    ImmersiveView()
+    ImmersiveView(modelSelection: ModelSelection())
+}
+
+private struct ModelLoadRequest: Equatable {
+    let model: ModelDescriptor
+    let catalogRevision: Int
+    let isRealityViewReady: Bool
 }

@@ -9,15 +9,22 @@ import SwiftUI
 
 @main
 struct ProspectorApp: App {
+    @State private var modelSelection = ModelSelection()
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(modelSelection: modelSelection)
+                .onOpenURL { url in
+                    Task {
+                        await modelSelection.openPackage(at: url)
+                    }
+                }
         }
         .windowResizability(.contentSize)
-        .defaultSize(width: 400, height: 200)
+        .defaultSize(width: 460, height: 320)
         
         ImmersiveSpace(id: "ImmersiveSpace") {
-            ImmersiveView()
+            ImmersiveView(modelSelection: modelSelection)
         }
     }
 }

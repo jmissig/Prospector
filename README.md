@@ -6,10 +6,63 @@ I built this for myself (well, I vibe coded it so if any code is janky please do
 
 ## Setup
 
-1. Drag your `.usdz` file into the `Prospector` folder in Xcode.
-2. Set `modelName` at the top of `ImmersiveView.swift` to your file's name (without the extension).
-3. Set your development team in the project's Signing & Capabilities settings.
-4. Build and run on Apple Vision Pro (visionOS 2.5+).
+1. Set your development team in the project's Signing & Capabilities settings.
+2. Build and run on Apple Vision Pro (visionOS 26.2+).
+3. Put a `.prospector` package in iCloud Drive and tap it in Files.
+
+Prospector opens the package, selects its default model, and makes every model in its manifest available in the launch-window picker. It keeps only one model loaded at a time and preserves your current navigation position and controller modes while switching.
+
+The repository remains asset-free. A placeholder bundled-model catalog is available for development, but normal use does not require embedding USDZ files in the app or committing them to Git.
+
+## Prospector packages
+
+A `.prospector` document is a folder that Files presents as one tappable package:
+
+```text
+My Models.prospector/
+├── manifest.json
+├── Model-A.usdz
+└── Model-B.usdz
+```
+
+Create the folder, place `manifest.json` and the referenced USDZ files inside it, then give the folder a `.prospector` extension. Keep model paths relative to the package root.
+
+Manifest format version 1:
+
+```json
+{
+  "formatVersion": 1,
+  "name": "My Models",
+  "defaultModelID": "model-a",
+  "models": [
+    {
+      "id": "model-a",
+      "name": "Model A",
+      "path": "Model-A.usdz"
+    },
+    {
+      "id": "model-b",
+      "name": "Model B",
+      "path": "Model-B.usdz",
+      "category": "Site Models"
+    }
+  ]
+}
+```
+
+Requirements:
+
+- `formatVersion` must be `1`.
+- `name`, every model `id`, and every model `name` must be nonempty.
+- Model IDs must be unique, and `defaultModelID` must match one of them.
+- Each `path` must stay inside the package and point to an existing `.usdz` file.
+- `category` is optional and reserved for future grouping in the picker.
+
+Malformed manifests, missing assets, unsupported versions, and paths outside the package produce a visible error instead of replacing the active catalog or crashing.
+
+### Optional bundled models
+
+For development builds, you can still drag USDZ files into the `Prospector` folder in Xcode and add matching `ModelDescriptor` values to `ModelCatalog.models`. Those bundled entries are shown until a `.prospector` package is opened.
 
 ## Controls
 
