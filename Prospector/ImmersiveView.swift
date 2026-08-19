@@ -15,7 +15,9 @@ struct ImmersiveView: View {
     @StateObject private var controllerManager = GameControllerManager()
     @State private var contentRoot: Entity?
     @State private var interfaceRoot: Entity?
+    @State private var hudRoot: Entity?
     @State private var isInterfacePlacementPending = false
+    @State private var isHUDPlacementPending = false
     @State private var isRealityViewReady = false
     @State private var sceneEntity: Entity?
     @State private var loadedModel: ModelDescriptor?
@@ -52,10 +54,12 @@ struct ImmersiveView: View {
     let pinchHoldDuration: TimeInterval = 0.5
     let locationsPanelPosition = SIMD3<Float>(-0.55, -0.02, -1.0)
     let controllerGuidePosition = SIMD3<Float>(0, -0.43, -1.0)
+    let hudPosition = SIMD3<Float>(0, 0.12, -1.0)
 
     private enum ImmersiveAttachment: Hashable {
         case locations
         case controllerGuide
+        case hud
     }
     
     var body: some View {
@@ -69,6 +73,12 @@ struct ImmersiveView: View {
             content.add(interface)
             interfaceRoot = interface
             attachPanels(attachments, to: interface)
+
+            let hud = Entity()
+            hud.isEnabled = false
+            content.add(hud)
+            hudRoot = hud
+            attachHUD(attachments, to: hud)
 
             isImmersiveActive = true
             isRealityViewReady = true
@@ -102,6 +112,7 @@ struct ImmersiveView: View {
             
             updateSubscription = content.subscribe(to: SceneEvents.Update.self) { event in
                 placeInterfaceRelativeToHeadIfNeeded()
+                placeHUDRelativeToHeadIfNeeded()
 
                 guard let entity = sceneEntity else { return }
                 
@@ -236,9 +247,14 @@ struct ImmersiveView: View {
                 navigationRuntime.wasPoseChanging = poseChanged
             }
         } update: { _, attachments in
-            guard let interfaceRoot else { return }
-            attachPanels(attachments, to: interfaceRoot)
+            if let interfaceRoot {
+                attachPanels(attachments, to: interfaceRoot)
+            }
+            if let hudRoot {
+                attachHUD(attachments, to: hudRoot)
+            }
             placeInterfaceRelativeToHeadIfNeeded()
+            placeHUDRelativeToHeadIfNeeded()
         } attachments: {
             Attachment(id: ImmersiveAttachment.locations) {
                 if isLocationsPanelPresented {
@@ -250,6 +266,17 @@ struct ImmersiveView: View {
                 if isLocationsPanelPresented {
                     ControllerGuideView(presentation: controllerManager.presentation)
                         .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                }
+            }
+            Attachment(id: ImmersiveAttachment.hud) {
+                if let modeCueText {
+                    Text(modeCueText)
+                        .font(.headline)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 12)
+                        .glassBackgroundEffect(in: .capsule)
+                        .transition(.opacity)
+                        .accessibilityAddTraits(.isStaticText)
                 }
             }
         }
@@ -267,22 +294,14 @@ struct ImmersiveView: View {
         .onTapGesture {
             setLocationsPanelPresented(!isLocationsPanelPresented)
         }
-        .overlay(alignment: .top) {
-            if !isLocationsPanelPresented, let modeCueText {
-                Text(modeCueText)
-                    .font(.headline)
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 10)
-                    .background(.regularMaterial, in: Capsule())
-                    .padding(.top, 40)
-                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
-            }
+        .onChange(of: controllerManager.resetHeightRevision) { _, _ in
+            showModeCue("Reset Floor")
         }
         .onChange(of: controllerManager.terrainFollowEnabled) { _, isEnabled in
             showModeCue(isEnabled ? "Terrain Follow On" : "Terrain Follow Off")
         }
         .onChange(of: controllerManager.speedModeEnabled) { _, isEnabled in
-            showModeCue(isEnabled ? "Speed Mode On" : "Speed Mode Off")
+            showModeCue(isEnabled ? "Fast Movement" : "Standard Movement")
         }
         .onChange(of: modelSelection.poseResetRevision) { _, _ in
             resetToStartingPosition()
@@ -378,6 +397,16 @@ struct ImmersiveView: View {
     }
 
     @MainActor
+    private func attachHUD(_ attachments: RealityViewAttachments, to anchor: Entity) {
+        guard let hud = attachments.entity(for: ImmersiveAttachment.hud) else { return }
+
+        hud.position = hudPosition
+        if hud.parent == nil {
+            anchor.addChild(hud)
+        }
+    }
+
+    @MainActor
     private func placeInterfaceRelativeToHeadIfNeeded() {
         guard isInterfacePlacementPending,
               let interfaceRoot,
@@ -411,6 +440,45 @@ struct ImmersiveView: View {
         )
         interfaceRoot.isEnabled = true
         isInterfacePlacementPending = false
+    }
+
+    @MainActor
+    private func placeHUDRelativeToHeadIfNeeded() {
+        guard isHUDPlacementPending,
+              let hudRoot,
+              let devicePose = currentDevicePositionAndYaw() else { return }
+
+        hudRoot.position = devicePose.position
+        hudRoot.orientation = simd_quatf(
+            angle: devicePose.yaw,
+            axis: SIMD3<Float>(0, 1, 0)
+        )
+        hudRoot.isEnabled = true
+        isHUDPlacementPending = false
+    }
+
+    @MainActor
+    private func currentDevicePositionAndYaw() -> (position: SIMD3<Float>, yaw: Float)? {
+        guard let worldTracking,
+              let deviceAnchor = worldTracking.queryDeviceAnchor(
+                atTimestamp: CACurrentMediaTime()
+              ) else { return nil }
+
+        let transform = deviceAnchor.originFromAnchorTransform
+        let position = SIMD3<Float>(
+            transform.columns.3.x,
+            transform.columns.3.y,
+            transform.columns.3.z
+        )
+        let back = SIMD3<Float>(
+            transform.columns.2.x,
+            0,
+            transform.columns.2.z
+        )
+        guard simd_length_squared(back) > 0.0001 else { return nil }
+
+        let normalizedBack = simd_normalize(back)
+        return (position, atan2(normalizedBack.x, normalizedBack.z))
     }
 
     @MainActor
@@ -583,6 +651,9 @@ struct ImmersiveView: View {
         interfaceRoot?.removeFromParent()
         interfaceRoot = nil
         isInterfacePlacementPending = false
+        hudRoot?.removeFromParent()
+        hudRoot = nil
+        isHUDPlacementPending = false
         modelSelection.loadState = .idle
         setLocationsPanelPresented(false)
 
@@ -743,18 +814,28 @@ struct ImmersiveView: View {
     private func showModeCue(_ text: String) {
         modeCueTask?.cancel()
 
+        hudRoot?.isEnabled = false
+        isHUDPlacementPending = true
+
         withAnimation(.easeOut(duration: 0.15)) {
             modeCueText = text
         }
+        placeHUDRelativeToHeadIfNeeded()
 
         modeCueTask = Task {
-            try? await Task.sleep(for: .seconds(1.2))
+            try? await Task.sleep(for: .seconds(1.0))
             guard !Task.isCancelled else { return }
 
             await MainActor.run {
-                withAnimation(.easeIn(duration: 0.2)) {
+                withAnimation(.easeIn(duration: 0.6)) {
                     modeCueText = nil
                 }
+            }
+
+            try? await Task.sleep(for: .seconds(0.6))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                hudRoot?.isEnabled = false
             }
         }
     }

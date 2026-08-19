@@ -45,6 +45,7 @@ class GameControllerManager: ObservableObject {
     @Published var lookVector = SIMD2<Float>(0, 0)
     @Published var heightAdjustment: Float = 0
     @Published var shouldResetHeight = false
+    @Published var resetHeightRevision = 0
     @Published var terrainFollowEnabled = false
     @Published var speedModeEnabled = false
     @Published var toggleLocationsRevision = 0
@@ -172,6 +173,7 @@ class GameControllerManager: ObservableObject {
         gamepad.dpad.up.pressedChangedHandler = { [weak self] _, _, pressed in
             guard let self = self else { return }
             if pressed && self.navigationEnabled {
+                self.resetHeightRevision += 1
                 self.shouldResetHeight = true
                 // Reset the flag after a short delay to ensure it's processed
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
