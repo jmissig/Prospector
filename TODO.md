@@ -27,7 +27,7 @@ These items were observed on Vision Pro hardware after loading a real `.prospect
 - Prospector now transforms ray endpoints, hit positions, normals, and bounds through the complete imported root transform. It also probes beneath the headset's physical X/Z displacement and chooses the upward-facing hit closest to the current navigation height.
 - Re-test D-pad **Up** at **First Approach** in all three designs and record the remaining offset from the manually corrected height.
 - Verify terrain follow across flat ground, slopes, stairs, and overhangs so the closest-height selection does not jump to another upward-facing surface.
-- Use the Debug terrain-probe log to inspect selected entity, navigation-space height, normal, and offset if hardware results still disagree.
+- D-pad **Up** now appends a release-build diagnostic entry for every processed reset frame to `terrain-probe.jsonl` inside the opened package. Inspect request revisions, device-anchor availability, ray endpoints, raw hits, transformed normals, rejection reasons, selected height, and zero-height fallback use after the next hardware test.
 
 ## Immersion modes
 

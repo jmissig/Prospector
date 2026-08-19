@@ -121,10 +121,12 @@ struct ImmersiveView: View {
                 // under the user's real location.
                 var headYaw: Float = 0
                 var devicePosition = SIMD3<Float>.zero
+                var deviceAnchorAvailable = false
                 let needsDevicePose = movement != .zero || controllerManager.shouldResetHeight
                 if needsDevicePose,
                    let worldTracking = worldTracking,
                    let deviceAnchor = worldTracking.queryDeviceAnchor(atTimestamp: CACurrentMediaTime()) {
+                    deviceAnchorAvailable = true
                     let deviceTransform = deviceAnchor.originFromAnchorTransform
                     devicePosition = SIMD3<Float>(
                         deviceTransform.columns.3.x,
@@ -142,6 +144,7 @@ struct ImmersiveView: View {
                     navigationRuntime.currentHeight = terrainSurfaceHeight(
                         below: navigationRuntime.playerPosition,
                         physicalDevicePosition: devicePosition,
+                        deviceAnchorAvailable: deviceAnchorAvailable,
                         virtualYaw: navigationRuntime.virtualYaw,
                         reportDiagnostics: true,
                         in: entity
@@ -790,12 +793,35 @@ struct ImmersiveView: View {
     private func terrainSurfaceHeight(
         below position: SIMD3<Float>,
         physicalDevicePosition: SIMD3<Float>,
+        deviceAnchorAvailable: Bool = true,
         virtualYaw: Float,
         reportDiagnostics: Bool = false,
         in entity: Entity
     ) -> Float? {
-        guard let scene = entity.scene,
-              let modelCoordinateSpace else { return nil }
+        guard let scene = entity.scene else {
+            if reportDiagnostics {
+                appendTerrainProbeDiagnostic(
+                    outcome: "sceneUnavailable",
+                    position: position,
+                    physicalDevicePosition: physicalDevicePosition,
+                    deviceAnchorAvailable: deviceAnchorAvailable,
+                    virtualYaw: virtualYaw
+                )
+            }
+            return nil
+        }
+        guard let modelCoordinateSpace else {
+            if reportDiagnostics {
+                appendTerrainProbeDiagnostic(
+                    outcome: "modelCoordinateSpaceUnavailable",
+                    position: position,
+                    physicalDevicePosition: physicalDevicePosition,
+                    deviceAnchorAvailable: deviceAnchorAvailable,
+                    virtualYaw: virtualYaw
+                )
+            }
+            return nil
+        }
 
         let yawRotation = simd_quatf(
             angle: -virtualYaw,
@@ -824,24 +850,58 @@ struct ImmersiveView: View {
         let modelEnd = modelCoordinateSpace.modelPoint(fromNavigation: navigationEnd)
         let modelRay = modelEnd - modelOrigin
         let rayLength = simd_length(modelRay)
-        guard rayLength > 0 else { return nil }
+        guard rayLength.isFinite, rayLength > 0 else {
+            if reportDiagnostics {
+                appendTerrainProbeDiagnostic(
+                    outcome: "invalidRay",
+                    position: position,
+                    physicalDevicePosition: physicalDevicePosition,
+                    deviceAnchorAvailable: deviceAnchorAvailable,
+                    virtualYaw: virtualYaw,
+                    navigationOrigin: navigationOrigin,
+                    navigationEnd: navigationEnd,
+                    modelOrigin: modelOrigin,
+                    modelEnd: modelEnd
+                )
+            }
+            return nil
+        }
 
-        let candidates = scene.raycast(
+        let rawHits = scene.raycast(
             origin: modelOrigin,
             direction: modelRay / rayLength,
             length: rayLength,
             query: .all,
             relativeTo: entity
-        ).compactMap { hit -> TerrainSurfaceCandidate? in
+        )
+        var hitDiagnostics: [TerrainProbeHitDiagnostic] = []
+        var candidates: [TerrainSurfaceCandidate] = []
+        for (rawIndex, hit) in rawHits.enumerated() {
             let navigationPosition = modelCoordinateSpace.navigationPoint(fromModel: hit.position)
             let navigationNormal = modelCoordinateSpace.navigationNormal(fromModel: hit.normal)
-            guard navigationNormal.y >= minimumWalkableNormalY else { return nil }
-
-            return TerrainSurfaceCandidate(
-                entityName: hit.entity.name,
-                position: navigationPosition,
-                normal: navigationNormal
-            )
+            let isAccepted = navigationNormal.y >= minimumWalkableNormalY
+            if isAccepted {
+                candidates.append(TerrainSurfaceCandidate(
+                    rawIndex: rawIndex,
+                    entityName: hit.entity.name,
+                    position: navigationPosition,
+                    normal: navigationNormal
+                ))
+            }
+            if reportDiagnostics {
+                hitDiagnostics.append(TerrainProbeHitDiagnostic(
+                    rawIndex: rawIndex,
+                    entityName: hit.entity.name,
+                    modelPosition: TerrainProbeDiagnosticVector(hit.position),
+                    modelNormal: TerrainProbeDiagnosticVector(hit.normal),
+                    navigationPosition: TerrainProbeDiagnosticVector(navigationPosition),
+                    navigationNormal: TerrainProbeDiagnosticVector(navigationNormal),
+                    accepted: isAccepted,
+                    rejectionReason: isAccepted
+                        ? nil
+                        : "navigationNormal.y below minimumWalkableNormalY \(minimumWalkableNormalY)"
+                ))
+            }
         }
 
         let selected = candidates.min {
@@ -866,10 +926,70 @@ struct ImmersiveView: View {
             } else {
                 print("Terrain probe found no upward-facing surface")
             }
+
         }
 #endif
 
+        if reportDiagnostics {
+            appendTerrainProbeDiagnostic(
+                outcome: selected == nil ? "noAcceptedSurface" : "selectedSurface",
+                position: position,
+                physicalDevicePosition: physicalDevicePosition,
+                deviceAnchorAvailable: deviceAnchorAvailable,
+                virtualYaw: virtualYaw,
+                navigationOrigin: navigationOrigin,
+                navigationEnd: navigationEnd,
+                modelOrigin: modelOrigin,
+                modelEnd: modelEnd,
+                rawHitCount: rawHits.count,
+                hits: hitDiagnostics,
+                selectedRawHitIndex: selected?.rawIndex,
+                selectedHeight: selected?.position.y
+            )
+        }
+
         return selected?.position.y
+    }
+
+    @MainActor
+    private func appendTerrainProbeDiagnostic(
+        outcome: String,
+        position: SIMD3<Float>,
+        physicalDevicePosition: SIMD3<Float>,
+        deviceAnchorAvailable: Bool,
+        virtualYaw: Float,
+        navigationOrigin: SIMD3<Float>? = nil,
+        navigationEnd: SIMD3<Float>? = nil,
+        modelOrigin: SIMD3<Float>? = nil,
+        modelEnd: SIMD3<Float>? = nil,
+        rawHitCount: Int = 0,
+        hits: [TerrainProbeHitDiagnostic] = [],
+        selectedRawHitIndex: Int? = nil,
+        selectedHeight: Float? = nil
+    ) {
+        let appliedHeight = selectedHeight ?? defaultHeight
+        modelSelection.appendTerrainProbeDiagnostic(TerrainProbeDiagnosticEntry(
+            timestamp: .now,
+            systemUptimeSeconds: ProcessInfo.processInfo.systemUptime,
+            modelID: loadedModel?.id ?? modelSelection.selectedModel.id,
+            resetRequestRevision: controllerManager.resetHeightRevision,
+            navigationPosition: TerrainProbeDiagnosticVector(position),
+            virtualYawRadians: Double(virtualYaw),
+            deviceAnchorAvailable: deviceAnchorAvailable,
+            physicalDevicePosition: TerrainProbeDiagnosticVector(physicalDevicePosition),
+            navigationRayOrigin: navigationOrigin.map(TerrainProbeDiagnosticVector.init),
+            navigationRayEnd: navigationEnd.map(TerrainProbeDiagnosticVector.init),
+            modelRayOrigin: modelOrigin.map(TerrainProbeDiagnosticVector.init),
+            modelRayEnd: modelEnd.map(TerrainProbeDiagnosticVector.init),
+            rawHitCount: rawHitCount,
+            hits: hits,
+            selectedRawHitIndex: selectedRawHitIndex,
+            selectedHeight: selectedHeight.map(Double.init),
+            appliedHeight: Double(appliedHeight),
+            defaultHeight: Double(defaultHeight),
+            usedDefaultHeight: selectedHeight == nil,
+            outcome: outcome
+        ))
     }
     
     @MainActor
@@ -991,6 +1111,7 @@ private struct ModelCoordinateSpace {
 }
 
 private struct TerrainSurfaceCandidate {
+    let rawIndex: Int
     let entityName: String
     let position: SIMD3<Float>
     let normal: SIMD3<Float>
