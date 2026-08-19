@@ -105,7 +105,6 @@ final class ModelSelection {
 
     @ObservationIgnored private var documentAccess: SecurityScopedResource?
     @ObservationIgnored private var positionPersistence: PositionPersistenceCoordinator?
-    @ObservationIgnored private var terrainProbeLogger: TerrainProbeDiagnosticLogger?
     @ObservationIgnored private var openRequestID = UUID()
 
     init(
@@ -142,10 +141,6 @@ final class ModelSelection {
             )
             models = document.models
             positionPersistence = persistence
-            terrainProbeLogger = TerrainProbeDiagnosticLogger(
-                packageURL: document.packageURL,
-                securityScope: document.securityScope
-            )
             selectedModel = document.defaultModel
             refreshSavedLocations()
             documentName = document.name
@@ -167,18 +162,6 @@ final class ModelSelection {
     func recordPose(_ pose: ViewerPose, for model: ModelDescriptor) {
         guard models.contains(model) else { return }
         positionPersistence?.record(pose: pose, for: model.id)
-    }
-
-    func appendTerrainProbeDiagnostic(_ entry: TerrainProbeDiagnosticEntry) {
-        guard let terrainProbeLogger else { return }
-
-        Task {
-            do {
-                try await terrainProbeLogger.append(entry)
-            } catch {
-                persistenceWarning = "Terrain probe logging stopped: \(error.localizedDescription)"
-            }
-        }
     }
 
     func poseForLoading(_ model: ModelDescriptor) -> ViewerPose {

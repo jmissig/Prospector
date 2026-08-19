@@ -93,11 +93,3 @@ Saved locations contain position only. Jumping to one leaves the model's current
 If a model state sidecar is malformed, Prospector leaves it untouched and disables writes for that model. A persistence failure does not prevent the model from loading.
 
 To turn a captured location into an authored starting position, copy that model's pose from its sidecar into `startPose` in `manifest.json`. Prospector never promotes transient state into the authored manifest automatically.
-
-## Terrain-probe diagnostics
-
-Pressing D-pad **Up** appends diagnostic entries to `terrain-probe.jsonl` at the package root. Each line is an independent JSON object so an interrupted write does not invalidate earlier entries.
-
-The log records the active model and reset-request revision, navigation and physical-device positions, model- and navigation-space ray endpoints, every raw collision hit and transformed normal, rejection reasons, the selected height, and whether Prospector applied the zero-height fallback. Multiple entries with the same `resetRequestRevision` show that one physical button press was processed on multiple scene-update frames.
-
-The file is runtime diagnostic data, not part of the authored manifest. It can be removed when it is no longer needed; Prospector creates it again on the next D-pad Up request.

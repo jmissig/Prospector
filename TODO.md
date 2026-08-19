@@ -4,7 +4,7 @@ This is the product and engineering backlog for Prospector. Performance-specific
 
 ## Vision Pro v1.1 findings
 
-These items were observed on Vision Pro hardware after loading a real `.prospector` package. Keep suspected causes distinct from measured ones; the terrain-probe item now records an implemented, evidence-backed fix awaiting hardware validation.
+These items were observed on Vision Pro hardware after loading a real `.prospector` package. Keep suspected causes distinct from measured ones.
 
 ### Decide what happens to the launch window during immersion
 
@@ -27,9 +27,10 @@ These items were observed on Vision Pro hardware after loading a real `.prospect
 
 - The measured cause was a model/navigation coordinate-space mismatch: the three tested 636 USDZs are Z-up and RealityKit imports them with an approximately -90-degree root rotation, while the old probe incorrectly treated entity-local -Y as navigation down.
 - Prospector now transforms ray endpoints, hit positions, normals, and bounds through the complete imported root transform. It also probes beneath the headset's physical X/Z displacement and chooses the upward-facing hit closest to the current navigation height.
-- Re-test D-pad **Up** at **First Approach** in all three designs and record the remaining offset from the manually corrected height.
+- D-pad **Up** now lands correctly in hardware testing. A temporary release-build log captured 375 probe frames across Designs 02 and 03: device pose was available for every frame, 365 frames selected upward-facing collision surfaces, and selected heights varied with location. This validates the corrected coordinate transforms and rules out a fixed model-space ray column.
 - Verify terrain follow across flat ground, slopes, stairs, and overhangs so the closest-height selection does not jump to another upward-facing surface.
-- D-pad **Up** now appends a release-build diagnostic entry for every processed reset frame to `terrain-probe.jsonl` inside the opened package. Inspect request revisions, device-anchor availability, ray endpoints, raw hits, transformed normals, rejection reasons, selected height, and zero-height fallback use after the next hardware test.
+- The same log exposed two follow-ups: each physical D-pad press was processed on roughly 5–10 scene-update frames, and one 10-frame request had no collision hit and applied the zero-height fallback. Make reset input edge-triggered and preserve the current height when no surface is found instead of silently jumping to zero.
+- Release-build terrain-probe logging was removed after collecting this evidence. Existing `terrain-probe.jsonl` files are inert historical diagnostics and can be deleted manually when no longer useful.
 
 ## Immersion modes
 

@@ -25,7 +25,6 @@ struct OpenedProspectorDocument: @unchecked Sendable {
     let name: String
     let models: [ModelDescriptor]
     let defaultModel: ModelDescriptor
-    let packageURL: URL
     let modelStates: [String: LoadedModelPositionState]
     let stateWarning: String?
     let securityScope: SecurityScopedResource
@@ -221,7 +220,6 @@ enum ProspectorDocumentLoader {
             name: documentName,
             models: models,
             defaultModel: defaultModel,
-            packageURL: packageURL,
             modelStates: stateResult.states,
             stateWarning: stateResult.warning,
             securityScope: securityScope
