@@ -11,6 +11,11 @@ import SwiftUI
 struct ProspectorApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @State private var modelSelection = ModelSelection()
+    @State private var immersionStyle: ImmersionStyle = .progressive(
+        0.2...1.0,
+        initialAmount: 0.6,
+        aspectRatio: .landscape
+    )
 
     var body: some Scene {
         WindowGroup {
@@ -33,5 +38,13 @@ struct ProspectorApp: App {
         ImmersiveSpace(id: "ImmersiveSpace") {
             ImmersiveView(modelSelection: modelSelection)
         }
+        .immersionStyle(
+            selection: $immersionStyle,
+            in: .progressive(
+                0.2...1.0,
+                initialAmount: 0.6,
+                aspectRatio: .landscape
+            )
+        )
     }
 }

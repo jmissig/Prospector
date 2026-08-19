@@ -14,6 +14,8 @@ This is a small fork of Christian's app. Christian says:
 
 Prospector opens the package, selects its default model, and makes every model in its manifest available in the launch-window picker. It keeps only one model loaded at a time and preserves per-model navigation positions and controller modes while switching.
 
+The immersive view starts partially immersed. Turn the Digital Crown to reveal more of the real world around the periphery or expand the model to full immersion.
+
 By default, Prospector resumes each model's last position. Turn off **Resume last positions** to use the manifest defaults instead, or choose **Reset to Starting Position** while immersed.
 
 The repository remains asset-free. A placeholder bundled-model catalog is available for development, but normal use does not require embedding USDZ files in the app or committing them to Git.
@@ -82,7 +84,7 @@ You can also pinch your thumb and middle finger together for half a second (eith
 
 See [PERFORMANCE.md](PERFORMANCE.md) for the current performance review and Vision Pro profiling plan.
 
-See [TODO.md](TODO.md) for planned immersion-mode investigations.
+See [TODO.md](TODO.md) for current product and hardware follow-ups.
 
 ## Credits
 

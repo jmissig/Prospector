@@ -10,13 +10,17 @@ The `.prospector` document path itself is not an obvious performance concern. It
 
 `ImmersiveView.generateStaticMeshCollisionShapes(for:)` walks the complete entity hierarchy and generates an exact static-mesh collision shape for every `ModelEntity`. Large architectural/site models can contain many meshes and substantial geometry, making this preprocessing expensive in both time and memory.
 
+The first v1.1 Vision Pro test confirmed that loading a real design has a noticeable delay but completes in less than a minute. It was not obnoxious enough to be the most urgent usability issue, but remains worth improving. The test did not separate USDZ decoding from collision generation, so the exact share attributable to collision preprocessing is still unmeasured.
+
 Collision traversal now checks cancellation before processing each entity and after asynchronous static-mesh generation. Model replacement also serializes load operations, so a newer request waits for the canceled request to finish cleanup before beginning another USDZ load. RealityKit's individual static-mesh operation may still take time to return after cancellation, so its cost remains a profiling target.
 
 Recommended investigation:
 
 - Profile collision preprocessing separately from USDZ decoding.
-- Prefer a simplified, terrain-only collision mesh or explicitly designated walkable entities when the source model can provide them.
-- Minimize collider complexity while preserving terrain-follow behavior.
+- Preserve the current behavior of generating exact static-mesh collisions for every `ModelEntity`; do not assume a terrain-only or simplified collision model.
+- Prototype a Mac-side preprocessor that performs the same all-mesh collision generation once and exports a compiled RealityKit entity hierarchy beside the USDZ in the `.prospector` package.
+- Measure whether loading that preprocessed artifact avoids the Vision Pro collision-generation delay while preserving collision and raycast behavior exactly.
+- Record cache provenance or a source-model fingerprint so stale preprocessed output is not mistaken for current geometry.
 
 Relevant code: `Prospector/ImmersiveView.swift`, `loadModel` and `generateStaticMeshCollisionShapes`.
 
