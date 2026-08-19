@@ -19,7 +19,7 @@ These items were observed on Vision Pro hardware after loading a real `.prospect
 - A later hardware build displayed both panels, confirming the attachments render, but they were incorrectly parented to a head anchor and followed every head movement. The controller guide was also much taller than its content because an unconstrained vertical divider expanded the row, and the locations panel used a nonstandard text-and-symbol dismissal control.
 - Prospector now samples the headset position and yaw once when the panels open, places both attachments in world space, constrains the controller guide to its ideal content height, and uses a standard icon-only Close button with an accessibility label.
 - Verify look-and-pinch and controller **A** independently open the panels in the current build.
-- Verify the locations panel remains world-stable to the left and the independent controller guide remains world-stable at bottom-center, then confirm Close, Add, jump, and delete on Vision Pro.
+- Verify the locations panel remains world-stable to the left and the independent controller guide remains world-stable at bottom-center, then confirm Close, Add, and jump on Vision Pro. Saved-location deletion is deliberately unavailable in the immersive panel after an accidental hardware-test deletion.
 
 ### Verify corrected D-pad Up and terrain-follow transforms
 

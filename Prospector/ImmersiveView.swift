@@ -335,17 +335,10 @@ struct ImmersiveView: View {
                 ScrollView {
                     LazyVStack(spacing: 8) {
                         ForEach(modelSelection.savedLocations) { location in
-                            HStack {
-                                Button(location.name) {
-                                    jump(to: location)
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                Button("Delete \(location.name)", systemImage: "trash", role: .destructive) {
-                                    modelSelection.deleteSavedLocation(location, for: modelSelection.selectedModel)
-                                    if activeSavedLocationID == location.id { activeSavedLocationID = nil }
-                                }
-                                .labelStyle(.iconOnly)
+                            Button(location.name) {
+                                jump(to: location)
                             }
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
                 }
