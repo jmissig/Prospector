@@ -47,7 +47,7 @@ Prospector is a small SwiftUI and RealityKit visionOS app targeting visionOS 26.
 - `Prospector/ProspectorApp.swift` declares the window and immersive space.
 - `Prospector/ModelCatalog.swift` owns model selection and supports bundled and external file sources.
 - `Prospector/ProspectorDocument.swift` validates versioned `.prospector` package manifests and retains security-scoped access to their USDZ files.
-- `Prospector/PositionPersistence.swift` reads and writes package-local `state.json` pose snapshots and owns the coalesced write cadence.
+- `Prospector/PositionPersistence.swift` reads and writes per-model `.state.json` pose/location sidecars and owns the coalesced write cadence.
 - The repository currently has no third-party package dependencies or test target.
 
 Preserve existing controller behavior unless the task explicitly changes it:
@@ -70,7 +70,7 @@ Preserve existing controller behavior unless the task explicitly changes it:
 - Surface asset-loading failures clearly. Do not add new force unwraps or `try!` calls for user-selected models.
 - Keep `.prospector` paths relative, contained within the package, and restricted to USDZ files. Do not weaken path or symlink validation.
 - Retain security-scoped package access for as long as any of its model URLs can be loaded, and balance every successful access call.
-- Keep transient poses in `state.json` and authored defaults in each manifest model's optional `startPose`; never promote one into the other silently.
+- Keep transient poses and position-only named locations in each model's state sidecar, and authored defaults in the manifest model's optional `startPose`; never promote one into the other silently.
 - Keep model switching understandable from the launch window before adding custom immersive controls.
 - Prefer standard SwiftUI and visionOS controls (`Picker`, `Button`, `Form`, `Section`, ornaments where appropriate) and platform behavior before custom control chrome or fixed geometry.
 - Use semantic text styles and accessible labels. Keep custom UI narrow and justified by an actual immersive interaction need.

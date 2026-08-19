@@ -15,6 +15,7 @@ struct ProspectorManifest: Decodable {
         let id: String
         let name: String
         let path: String
+        let statePath: String?
         let category: String?
         let startPose: ViewerPose?
     }
@@ -25,9 +26,8 @@ struct OpenedProspectorDocument: @unchecked Sendable {
     let models: [ModelDescriptor]
     let defaultModel: ModelDescriptor
     let packageURL: URL
-    let state: ProspectorState?
+    let modelStates: [String: LoadedModelPositionState]
     let stateWarning: String?
-    let stateWritesEnabled: Bool
     let securityScope: SecurityScopedResource
 }
 
@@ -61,6 +61,8 @@ enum ProspectorDocumentError: LocalizedError {
     case invalidModelPath(modelID: String)
     case unsupportedModelType(modelID: String)
     case missingModel(modelID: String)
+    case invalidStatePath(modelID: String)
+    case duplicateStatePath(String)
 
     var errorDescription: String? {
         switch self {
@@ -90,6 +92,10 @@ enum ProspectorDocumentError: LocalizedError {
             return "Model “\(modelID)” must reference a .usdz file."
         case .missingModel(let modelID):
             return "The USDZ file for model “\(modelID)” is missing."
+        case .invalidStatePath(let modelID):
+            return "Model “\(modelID)” has an invalid statePath."
+        case .duplicateStatePath(let path):
+            return "More than one model uses the state path “\(path)”."
         }
     }
 }
@@ -97,7 +103,6 @@ enum ProspectorDocumentError: LocalizedError {
 enum ProspectorDocumentLoader {
     static let packageExtension = "prospector"
     static let manifestFilename = "manifest.json"
-    static let stateFilename = "state.json"
     static let supportedFormatVersion = 1
 
     static func load(from packageURL: URL) throws -> OpenedProspectorDocument {
@@ -165,6 +170,7 @@ enum ProspectorDocumentLoader {
         }
 
         var modelIDs = Set<String>()
+        var statePaths = Set<String>()
         let models = try manifest.models.map { model -> ModelDescriptor in
             let modelID = model.id.trimmingCharacters(in: .whitespacesAndNewlines)
             let modelName = model.name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -184,11 +190,21 @@ enum ProspectorDocumentLoader {
                 modelID: modelID,
                 packageURL: packageURL
             )
+            let stateURL = try validatedStateURL(
+                for: model.statePath,
+                modelPath: model.path,
+                modelID: modelID,
+                packageURL: packageURL
+            )
+            guard statePaths.insert(stateURL.path).inserted else {
+                throw ProspectorDocumentError.duplicateStatePath(stateURL.lastPathComponent)
+            }
 
             return ModelDescriptor(
                 id: modelID,
                 displayName: modelName,
                 source: .file(modelURL),
+                stateURL: stateURL,
                 category: model.category,
                 startPose: try validatedPose(model.startPose, modelID: modelID, source: "manifest")
             )
@@ -199,70 +215,89 @@ enum ProspectorDocumentLoader {
             throw ProspectorDocumentError.invalidDefaultModelID(defaultModelID)
         }
 
-        let stateResult = loadState(
-            at: packageURL,
-            validModelIDs: Set(models.map(\.id))
-        )
+        let stateResult = loadModelStates(at: packageURL, models: models)
 
         return OpenedProspectorDocument(
             name: documentName,
             models: models,
             defaultModel: defaultModel,
             packageURL: packageURL,
-            state: stateResult.state,
+            modelStates: stateResult.states,
             stateWarning: stateResult.warning,
-            stateWritesEnabled: stateResult.writesEnabled,
             securityScope: securityScope
         )
     }
 
-    private static func loadState(
+    private static func loadModelStates(
         at packageURL: URL,
-        validModelIDs: Set<String>
-    ) -> (state: ProspectorState?, warning: String?, writesEnabled: Bool) {
-        let stateURL = packageURL.appendingPathComponent(stateFilename, isDirectory: false)
-        guard FileManager.default.fileExists(atPath: stateURL.path) else {
-            return (nil, nil, true)
-        }
+        models: [ModelDescriptor]
+    ) -> (states: [String: LoadedModelPositionState], warning: String?) {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        var results: [String: LoadedModelPositionState] = [:]
+        var warnings: [String] = []
 
-        do {
-            let data = try Data(contentsOf: stateURL)
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-            let state = try decoder.decode(ProspectorState.self, from: data)
-            try validate(state: state, validModelIDs: validModelIDs)
-            return (state, nil, true)
-        } catch {
-            let message = error.localizedDescription
-            return (
-                nil,
-                "state.json could not be used: \(message)",
-                false
-            )
+        for model in models {
+            guard let stateURL = model.stateURL else { continue }
+            if FileManager.default.fileExists(atPath: stateURL.path) {
+                do {
+                    var state = try decoder.decode(ModelPositionState.self, from: Data(contentsOf: stateURL))
+                    try validate(state: state, modelID: model.id)
+                    for index in state.savedLocations.indices where state.savedLocations[index].name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        state.savedLocations[index].name = "Location \(index + 1)"
+                    }
+                    results[model.id] = LoadedModelPositionState(state: state, writesEnabled: true)
+                } catch {
+                    warnings.append("\(stateURL.lastPathComponent) could not be used: \(error.localizedDescription)")
+                    results[model.id] = LoadedModelPositionState(state: nil, writesEnabled: false)
+                }
+            } else {
+                results[model.id] = LoadedModelPositionState(state: nil, writesEnabled: true)
+            }
+        }
+        return (results, warnings.isEmpty ? nil : warnings.joined(separator: "\n"))
+    }
+
+    private static func validate(state: ModelPositionState, modelID: String) throws {
+        guard state.formatVersion == ModelPositionState.supportedFormatVersion else {
+            throw ProspectorStateError.unsupportedFormatVersion(state.formatVersion)
+        }
+        guard state.modelID == modelID else {
+            throw ProspectorStateError.mismatchedModelID(expected: modelID, actual: state.modelID)
+        }
+        guard state.pose.isFinite else { throw ProspectorStateError.invalidPose(modelID) }
+        var locationIDs = Set<SavedLocation.ID>()
+        guard state.savedLocations.allSatisfy({
+            $0.viewerPositionMeters.isFinite && locationIDs.insert($0.id).inserted
+        }) else {
+            throw ProspectorStateError.invalidLocation(modelID)
         }
     }
 
-    private static func validate(
-        state: ProspectorState,
-        validModelIDs: Set<String>
-    ) throws {
-        guard state.formatVersion == ProspectorState.supportedFormatVersion else {
-            throw ProspectorStateError.unsupportedFormatVersion(state.formatVersion)
+    private static func validatedStateURL(
+        for statePath: String?,
+        modelPath: String,
+        modelID: String,
+        packageURL: URL
+    ) throws -> URL {
+        let path = statePath?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let derived = NSString(string: modelPath).deletingPathExtension + ".state.json"
+        let selectedPath = (path?.isEmpty == false) ? path! : derived
+        guard !NSString(string: selectedPath).isAbsolutePath,
+              selectedPath.lowercased().hasSuffix(".state.json") else {
+            throw ProspectorDocumentError.invalidStatePath(modelID: modelID)
         }
-        guard validModelIDs.contains(state.currentModelID) else {
-            throw ProspectorStateError.invalidCurrentModelID(state.currentModelID)
+        let packageRoot = packageURL.standardizedFileURL.resolvingSymlinksInPath()
+        let proposedURL = packageURL.appendingPathComponent(selectedPath).standardizedFileURL
+        let prefix = packageRoot.path.hasSuffix("/") ? packageRoot.path : packageRoot.path + "/"
+        let resolvedParent = proposedURL.deletingLastPathComponent().resolvingSymlinksInPath()
+        let stateURL = resolvedParent.appendingPathComponent(proposedURL.lastPathComponent)
+        guard stateURL.path.hasPrefix(prefix),
+              !FileManager.default.fileExists(atPath: stateURL.path)
+                || stateURL.resolvingSymlinksInPath().path.hasPrefix(prefix) else {
+            throw ProspectorDocumentError.invalidStatePath(modelID: modelID)
         }
-
-        var stateModelIDs = Set<String>()
-        for modelState in state.modelStates {
-            guard stateModelIDs.insert(modelState.modelID).inserted else {
-                throw ProspectorStateError.duplicateModelID(modelState.modelID)
-            }
-            guard validModelIDs.contains(modelState.modelID),
-                  modelState.pose.isFinite else {
-                throw ProspectorStateError.invalidPose(modelState.modelID)
-            }
-        }
+        return stateURL
     }
 
     private static func validatedPose(

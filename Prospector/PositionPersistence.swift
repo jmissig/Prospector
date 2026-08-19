@@ -21,13 +21,8 @@ struct ViewerPosition: Codable, Hashable, Sendable {
         self.init(x: Double(value.x), y: Double(value.y), z: Double(value.z))
     }
 
-    var simdValue: SIMD3<Float> {
-        SIMD3(Float(x), Float(y), Float(z))
-    }
-
-    var isFinite: Bool {
-        x.isFinite && y.isFinite && z.isFinite
-    }
+    var simdValue: SIMD3<Float> { SIMD3(Float(x), Float(y), Float(z)) }
+    var isFinite: Bool { x.isFinite && y.isFinite && z.isFinite }
 }
 
 struct ViewerPose: Codable, Hashable, Sendable {
@@ -40,10 +35,7 @@ struct ViewerPose: Codable, Hashable, Sendable {
     }
 
     init(position: SIMD3<Float>, yawRadians: Float) {
-        self.init(
-            viewerPositionMeters: ViewerPosition(position),
-            yawRadians: Double(yawRadians)
-        )
+        self.init(viewerPositionMeters: ViewerPosition(position), yawRadians: Double(yawRadians))
     }
 
     static let origin = ViewerPose(
@@ -51,98 +43,110 @@ struct ViewerPose: Codable, Hashable, Sendable {
         yawRadians: 0
     )
 
-    var position: SIMD3<Float> {
-        viewerPositionMeters.simdValue
+    var position: SIMD3<Float> { viewerPositionMeters.simdValue }
+    var yaw: Float { Float(yawRadians) }
+    var isFinite: Bool { viewerPositionMeters.isFinite && yawRadians.isFinite }
+}
+
+struct SavedLocation: Codable, Identifiable, Hashable, Sendable {
+    let id: UUID
+    var name: String
+    let createdAt: Date
+    let viewerPositionMeters: ViewerPosition
+
+    init(
+        id: UUID = UUID(),
+        name: String,
+        createdAt: Date = .now,
+        viewerPositionMeters: ViewerPosition
+    ) {
+        self.id = id
+        self.name = name
+        self.createdAt = createdAt
+        self.viewerPositionMeters = viewerPositionMeters
     }
 
-    var yaw: Float {
-        Float(yawRadians)
+    private enum CodingKeys: String, CodingKey {
+        case id, name, createdAt, viewerPositionMeters
     }
 
-    var isFinite: Bool {
-        viewerPositionMeters.isFinite && yawRadians.isFinite
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? .now
+        viewerPositionMeters = try container.decode(ViewerPosition.self, forKey: .viewerPositionMeters)
     }
 }
 
-struct ProspectorState: Codable, Sendable {
+struct ModelPositionState: Codable, Sendable {
     static let supportedFormatVersion = 1
 
     let formatVersion: Int
+    let modelID: String
     var updatedAt: Date
-    var currentModelID: String
-    var modelStates: [ModelState]
+    var viewerPositionMeters: ViewerPosition
+    var yawRadians: Double
+    var savedLocations: [SavedLocation]
 
-    struct ModelState: Codable, Sendable {
-        let modelID: String
-        var updatedAt: Date
-        var viewerPositionMeters: ViewerPosition
-        var yawRadians: Double
-
-        var pose: ViewerPose {
-            ViewerPose(
-                viewerPositionMeters: viewerPositionMeters,
-                yawRadians: yawRadians
-            )
-        }
-    }
-
-    init(currentModelID: String, updatedAt: Date = .now, modelStates: [ModelState] = []) {
+    init(
+        modelID: String,
+        pose: ViewerPose = .origin,
+        updatedAt: Date = .now,
+        savedLocations: [SavedLocation] = []
+    ) {
         formatVersion = Self.supportedFormatVersion
+        self.modelID = modelID
         self.updatedAt = updatedAt
-        self.currentModelID = currentModelID
-        self.modelStates = modelStates
+        viewerPositionMeters = pose.viewerPositionMeters
+        yawRadians = pose.yawRadians
+        self.savedLocations = savedLocations
     }
 
-    func pose(for modelID: String) -> ViewerPose? {
-        modelStates.first(where: { $0.modelID == modelID })?.pose
+    var pose: ViewerPose {
+        ViewerPose(viewerPositionMeters: viewerPositionMeters, yawRadians: yawRadians)
     }
 
-    mutating func record(_ pose: ViewerPose, for modelID: String, at date: Date) {
+    mutating func record(_ pose: ViewerPose, at date: Date = .now) {
         updatedAt = date
-
-        let modelState = ModelState(
-            modelID: modelID,
-            updatedAt: date,
-            viewerPositionMeters: pose.viewerPositionMeters,
-            yawRadians: pose.yawRadians
-        )
-
-        if let index = modelStates.firstIndex(where: { $0.modelID == modelID }) {
-            modelStates[index] = modelState
-        } else {
-            modelStates.append(modelState)
-        }
+        viewerPositionMeters = pose.viewerPositionMeters
+        yawRadians = pose.yawRadians
     }
+}
+
+struct LoadedModelPositionState: Sendable {
+    let state: ModelPositionState?
+    let writesEnabled: Bool
 }
 
 enum ProspectorStateError: LocalizedError {
     case unsupportedFormatVersion(Int)
-    case duplicateModelID(String)
-    case invalidCurrentModelID(String)
+    case mismatchedModelID(expected: String, actual: String)
     case invalidPose(String)
+    case invalidLocation(String)
 
     var errorDescription: String? {
         switch self {
         case .unsupportedFormatVersion(let version):
             return "State format version \(version) is not supported. Position saving is disabled."
-        case .duplicateModelID(let modelID):
-            return "state.json contains duplicate entries for “\(modelID)”. Position saving is disabled."
-        case .invalidCurrentModelID(let modelID):
-            return "state.json references unknown current model “\(modelID)”. Position saving is disabled."
+        case .mismatchedModelID(let expected, let actual):
+            return "State for “\(expected)” identifies itself as “\(actual)”. Position saving is disabled."
         case .invalidPose(let modelID):
-            return "state.json contains an invalid pose for “\(modelID)”. Position saving is disabled."
+            return "State contains an invalid pose for “\(modelID)”. Position saving is disabled."
+        case .invalidLocation(let modelID):
+            return "State contains an invalid saved location for “\(modelID)”. Position saving is disabled."
         }
     }
 }
 
 @MainActor
 final class PositionPersistenceCoordinator {
-    private let writer: ProspectorStateWriter
-    private var state: ProspectorState
-    private var writesEnabled: Bool
-    private var isDirty = false
-    private var revision = 0
-    private var lastSuccessfulWrite: Date?
+    private var states: [String: ModelPositionState]
+    private let writers: [String: ModelPositionStateWriter]
+    private var writesEnabled: [String: Bool]
+    private var dirtyModelIDs: Set<String>
+    private var revisions: [String: Int] = [:]
+    private var lastSuccessfulWrite: [String: Date] = [:]
     private var debounceTask: Task<Void, Never>?
     private var writeTask: Task<String?, Never>?
     private let onWarning: (String) -> Void
@@ -151,14 +155,18 @@ final class PositionPersistenceCoordinator {
     private let continuousWriteInterval: TimeInterval = 30
 
     init(
-        packageURL: URL,
-        initialState: ProspectorState?,
-        writesEnabled: Bool,
+        models: [ModelDescriptor],
+        initialStates: [String: LoadedModelPositionState],
         onWarning: @escaping (String) -> Void
     ) {
-        writer = ProspectorStateWriter(packageURL: packageURL)
-        state = initialState ?? ProspectorState(currentModelID: "")
-        self.writesEnabled = writesEnabled
+        states = initialStates.compactMapValues(\.state)
+        writers = Dictionary(uniqueKeysWithValues: models.compactMap { model in
+            model.stateURL.map { (model.id, ModelPositionStateWriter(stateURL: $0)) }
+        })
+        writesEnabled = Dictionary(uniqueKeysWithValues: models.map {
+            ($0.id, initialStates[$0.id]?.writesEnabled ?? ($0.stateURL != nil))
+        })
+        dirtyModelIDs = []
         self.onWarning = onWarning
     }
 
@@ -167,112 +175,118 @@ final class PositionPersistenceCoordinator {
         writeTask?.cancel()
     }
 
-    func pose(for modelID: String) -> ViewerPose? {
-        state.pose(for: modelID)
-    }
-
-    func setCurrentModel(_ modelID: String) {
-        guard state.currentModelID != modelID else { return }
-        state.currentModelID = modelID
-        state.updatedAt = .now
-        isDirty = true
-        revision += 1
-        scheduleWrite()
-    }
+    func pose(for modelID: String) -> ViewerPose? { states[modelID]?.pose }
+    func locations(for modelID: String) -> [SavedLocation] { states[modelID]?.savedLocations ?? [] }
 
     func record(pose: ViewerPose, for modelID: String) {
-        guard pose.isFinite else { return }
+        guard pose.isFinite, writers[modelID] != nil else { return }
+        var state = states[modelID] ?? ModelPositionState(modelID: modelID, pose: pose)
+        state.record(pose)
+        states[modelID] = state
+        markDirty(modelID)
+    }
 
-        let now = Date()
-        state.record(pose, for: modelID, at: now)
-        isDirty = true
-        revision += 1
+    func addLocation(position: ViewerPosition, for modelID: String) -> SavedLocation? {
+        guard position.isFinite, writers[modelID] != nil else { return nil }
+        var state = states[modelID] ?? ModelPositionState(modelID: modelID)
+        let usedNumbers = Set(state.savedLocations.compactMap { location -> Int? in
+            let prefix = "Location "
+            guard location.name.hasPrefix(prefix) else { return nil }
+            return Int(location.name.dropFirst(prefix.count))
+        })
+        let number = sequence(first: 1, next: { $0 + 1 }).first(where: { !usedNumbers.contains($0) }) ?? 1
+        let location = SavedLocation(name: "Location \(number)", viewerPositionMeters: position)
+        state.savedLocations.append(location)
+        state.updatedAt = .now
+        states[modelID] = state
+        markDirty(modelID)
+        return location
+    }
 
-        if let lastSuccessfulWrite,
-           now.timeIntervalSince(lastSuccessfulWrite) >= continuousWriteInterval {
-            startWrite()
-        } else {
-            scheduleWrite()
-        }
+    func deleteLocation(id: SavedLocation.ID, for modelID: String) {
+        guard var state = states[modelID] else { return }
+        let oldCount = state.savedLocations.count
+        state.savedLocations.removeAll(where: { $0.id == id })
+        guard state.savedLocations.count != oldCount else { return }
+        state.updatedAt = .now
+        states[modelID] = state
+        markDirty(modelID)
     }
 
     func flush() async -> String? {
         debounceTask?.cancel()
         debounceTask = nil
+        if let writeTask { _ = await writeTask.value }
 
-        if let writeTask {
-            _ = await writeTask.value
+        for modelID in dirtyModelIDs.sorted() {
+            if let warning = await writeNow(modelID) { return warning }
         }
-
-        guard isDirty, writesEnabled else { return nil }
-        return await writeNow()
+        return nil
     }
 
-    private func scheduleWrite() {
-        guard writesEnabled else { return }
+    private func markDirty(_ modelID: String) {
+        dirtyModelIDs.insert(modelID)
+        revisions[modelID, default: 0] += 1
+        let now = Date()
+        if let lastWrite = lastSuccessfulWrite[modelID],
+           now.timeIntervalSince(lastWrite) >= continuousWriteInterval {
+            startWrite(modelID)
+        } else {
+            scheduleWrite(modelID)
+        }
+    }
 
+    private func scheduleWrite(_ modelID: String) {
+        guard writesEnabled[modelID] == true else { return }
         debounceTask?.cancel()
         let stationaryDelay = self.stationaryDelay
         debounceTask = Task { [weak self] in
-            do {
-                try await Task.sleep(for: stationaryDelay)
-            } catch {
-                return
-            }
+            try? await Task.sleep(for: stationaryDelay)
             guard !Task.isCancelled else { return }
-            self?.startWrite()
+            self?.startWrite(modelID)
         }
     }
 
-    private func startWrite() {
-        guard writesEnabled, isDirty, writeTask == nil else { return }
-
+    private func startWrite(_ modelID: String) {
+        guard writesEnabled[modelID] == true, dirtyModelIDs.contains(modelID), writeTask == nil else { return }
         debounceTask?.cancel()
         debounceTask = nil
         writeTask = Task { [weak self] in
             guard let self else { return nil }
-            let warning = await writeNow()
+            let warning = await writeNow(modelID)
             writeTask = nil
-            if let warning {
-                onWarning(warning)
+            if let warning { onWarning(warning) }
+            if let nextModelID = dirtyModelIDs.sorted().first {
+                scheduleWrite(nextModelID)
             }
             return warning
         }
     }
 
-    private func writeNow() async -> String? {
-        guard writesEnabled, isDirty else { return nil }
-
-        let snapshot = state
-        let snapshotRevision = revision
+    private func writeNow(_ modelID: String) async -> String? {
+        guard writesEnabled[modelID] == true,
+              dirtyModelIDs.contains(modelID),
+              let state = states[modelID],
+              let writer = writers[modelID] else { return nil }
+        let revision = revisions[modelID, default: 0]
         do {
-            try await writer.write(snapshot)
-            isDirty = revision != snapshotRevision
-            lastSuccessfulWrite = .now
-            if isDirty {
-                scheduleWrite()
-            }
+            try await writer.write(state)
+            if revisions[modelID, default: 0] == revision { dirtyModelIDs.remove(modelID) }
+            lastSuccessfulWrite[modelID] = .now
             return nil
         } catch {
-            writesEnabled = false
-            debounceTask?.cancel()
-            debounceTask = nil
-            return "Position saving stopped: \(error.localizedDescription)"
+            writesEnabled[modelID] = false
+            return "Position saving stopped for \(modelID): \(error.localizedDescription)"
         }
     }
 }
 
-actor ProspectorStateWriter {
+actor ModelPositionStateWriter {
     private let stateURL: URL
 
-    init(packageURL: URL) {
-        stateURL = packageURL.appendingPathComponent(
-            ProspectorDocumentLoader.stateFilename,
-            isDirectory: false
-        )
-    }
+    init(stateURL: URL) { self.stateURL = stateURL }
 
-    func write(_ state: ProspectorState) throws {
+    func write(_ state: ModelPositionState) throws {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
@@ -281,23 +295,10 @@ actor ProspectorStateWriter {
 
         var coordinationError: NSError?
         var writeError: Error?
-        NSFileCoordinator().coordinate(
-            writingItemAt: stateURL,
-            options: [],
-            error: &coordinationError
-        ) { coordinatedURL in
-            do {
-                try data.write(to: coordinatedURL, options: .atomic)
-            } catch {
-                writeError = error
-            }
+        NSFileCoordinator().coordinate(writingItemAt: stateURL, options: [], error: &coordinationError) { url in
+            do { try data.write(to: url, options: .atomic) } catch { writeError = error }
         }
-
-        if let coordinationError {
-            throw coordinationError
-        }
-        if let writeError {
-            throw writeError
-        }
+        if let coordinationError { throw coordinationError }
+        if let writeError { throw writeError }
     }
 }

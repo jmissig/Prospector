@@ -15,6 +15,7 @@ struct ModelDescriptor: Identifiable, Hashable, Sendable {
     let id: String
     let displayName: String
     let source: ModelSource
+    let stateURL: URL?
     let category: String?
     let startPose: ViewerPose?
 
@@ -22,12 +23,14 @@ struct ModelDescriptor: Identifiable, Hashable, Sendable {
         id: String,
         displayName: String,
         source: ModelSource,
+        stateURL: URL? = nil,
         category: String? = nil,
         startPose: ViewerPose? = nil
     ) {
         self.id = id
         self.displayName = displayName
         self.source = source
+        self.stateURL = stateURL
         self.category = category
         self.startPose = startPose
     }
@@ -43,6 +46,7 @@ struct ModelDescriptor: Identifiable, Hashable, Sendable {
             id: id,
             displayName: displayName,
             source: .bundled(resourceName: resourceName),
+            stateURL: nil,
             category: category,
             startPose: startPose
         )
@@ -78,6 +82,7 @@ final class ModelSelection {
     private(set) var isOpeningDocument = false
     private(set) var catalogRevision = 0
     private(set) var poseResetRevision = 0
+    private(set) var savedLocations: [SavedLocation] = []
 
     var resumeLastPositions: Bool {
         didSet {
@@ -89,7 +94,7 @@ final class ModelSelection {
         didSet {
             guard selectedModel != oldValue else { return }
             loadState = .idle
-            positionPersistence?.setCurrentModel(selectedModel.id)
+            refreshSavedLocations()
             Task {
                 await flushPositionPersistence()
             }
@@ -128,24 +133,16 @@ final class ModelSelection {
             guard requestID == openRequestID, !Task.isCancelled else { return }
 
             let persistence = PositionPersistenceCoordinator(
-                packageURL: document.packageURL,
-                initialState: document.state,
-                writesEnabled: document.stateWritesEnabled,
+                models: document.models,
+                initialStates: document.modelStates,
                 onWarning: { [weak self] warning in
                     self?.persistenceWarning = warning
                 }
             )
-            let resumedModel: ModelDescriptor?
-            if resumeLastPositions, let currentModelID = document.state?.currentModelID {
-                resumedModel = document.models.first(where: { $0.id == currentModelID })
-            } else {
-                resumedModel = nil
-            }
-
             models = document.models
             positionPersistence = persistence
-            selectedModel = resumedModel ?? document.defaultModel
-            persistence.setCurrentModel(selectedModel.id)
+            selectedModel = document.defaultModel
+            refreshSavedLocations()
             documentName = document.name
             documentAccess = document.securityScope
             persistenceWarning = document.stateWarning
@@ -180,6 +177,23 @@ final class ModelSelection {
         poseResetRevision += 1
     }
 
+    @discardableResult
+    func addSavedLocation(position: SIMD3<Float>, for model: ModelDescriptor) -> SavedLocation? {
+        guard model == selectedModel else { return nil }
+        let location = positionPersistence?.addLocation(
+            position: ViewerPosition(position),
+            for: model.id
+        )
+        refreshSavedLocations()
+        return location
+    }
+
+    func deleteSavedLocation(_ location: SavedLocation, for model: ModelDescriptor) {
+        guard model == selectedModel else { return }
+        positionPersistence?.deleteLocation(id: location.id, for: model.id)
+        refreshSavedLocations()
+    }
+
     func flushPositionPersistence() async {
         guard let positionPersistence else { return }
 
@@ -189,4 +203,8 @@ final class ModelSelection {
     }
 
     private static let resumePreferenceKey = "resumeLastPositions"
+
+    private func refreshSavedLocations() {
+        savedLocations = positionPersistence?.locations(for: selectedModel.id) ?? []
+    }
 }

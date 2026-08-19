@@ -16,6 +16,18 @@ class GameControllerManager: ObservableObject {
     @Published var shouldResetHeight = false
     @Published var terrainFollowEnabled = false
     @Published var speedModeEnabled = false
+    @Published var toggleLocationsRevision = 0
+    @Published var previousLocationRevision = 0
+    @Published var nextLocationRevision = 0
+
+    var navigationEnabled = true {
+        didSet {
+            guard !navigationEnabled else { return }
+            movementVector = .zero
+            lookVector = .zero
+            heightAdjustment = 0
+        }
+    }
     
     private var controller: GCController?
     private let heightSpeed: Float = 1.0
@@ -69,19 +81,20 @@ class GameControllerManager: ObservableObject {
         gamepad.leftThumbstick.valueChangedHandler = { [weak self] _, xValue, yValue in
             guard let self = self else { return }
             
-            self.movementVector = SIMD2<Float>(xValue, yValue)
+            self.movementVector = self.navigationEnabled ? SIMD2<Float>(xValue, yValue) : .zero
         }
 
         gamepad.rightThumbstick.valueChangedHandler = { [weak self] _, xValue, yValue in
             guard let self = self else { return }
 
-            self.lookVector = SIMD2<Float>(xValue, yValue)
+            self.lookVector = self.navigationEnabled ? SIMD2<Float>(xValue, yValue) : .zero
         }
         
         // Left trigger (L2/LT) - decrease height
         gamepad.leftTrigger.valueChangedHandler = { [weak self] _, value, _ in
             guard let self = self else { return }
 
+            guard self.navigationEnabled else { self.heightAdjustment = 0; return }
             if value > 0.1 {
                 self.heightAdjustment = -self.heightSpeed
             } else if self.heightAdjustment < 0 {
@@ -93,6 +106,7 @@ class GameControllerManager: ObservableObject {
         gamepad.rightTrigger.valueChangedHandler = { [weak self] _, value, _ in
             guard let self = self else { return }
 
+            guard self.navigationEnabled else { self.heightAdjustment = 0; return }
             if value > 0.1 {
                 self.heightAdjustment = self.heightSpeed
             } else if self.heightAdjustment > 0 {
@@ -103,8 +117,7 @@ class GameControllerManager: ObservableObject {
         // D-pad up - reset height
         gamepad.dpad.up.pressedChangedHandler = { [weak self] _, _, pressed in
             guard let self = self else { return }
-            
-            if pressed {
+            if pressed && self.navigationEnabled {
                 self.shouldResetHeight = true
                 // Reset the flag after a short delay to ensure it's processed
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -116,7 +129,7 @@ class GameControllerManager: ObservableObject {
         gamepad.dpad.right.pressedChangedHandler = { [weak self] _, _, pressed in
             guard let self = self else { return }
 
-            if pressed {
+            if pressed && self.navigationEnabled {
                 self.terrainFollowEnabled.toggle()
             }
         }
@@ -124,9 +137,22 @@ class GameControllerManager: ObservableObject {
         gamepad.dpad.left.pressedChangedHandler = { [weak self] _, _, pressed in
             guard let self = self else { return }
 
-            if pressed {
+            if pressed && self.navigationEnabled {
                 self.speedModeEnabled.toggle()
             }
+        }
+
+        gamepad.buttonA.pressedChangedHandler = { [weak self] _, _, pressed in
+            guard pressed else { return }
+            self?.toggleLocationsRevision += 1
+        }
+        gamepad.buttonX.pressedChangedHandler = { [weak self] _, _, pressed in
+            guard pressed, self?.navigationEnabled == true else { return }
+            self?.previousLocationRevision += 1
+        }
+        gamepad.buttonY.pressedChangedHandler = { [weak self] _, _, pressed in
+            guard pressed, self?.navigationEnabled == true else { return }
+            self?.nextLocationRevision += 1
         }
     }
     

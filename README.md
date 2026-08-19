@@ -12,9 +12,9 @@ This is a small fork of Christian's app. Christian says:
 2. Build and run on Apple Vision Pro (visionOS 26.2+).
 3. Put a `.prospector` package in iCloud Drive and tap it in Files.
 
-Prospector opens the package, selects its default model, and makes every model in its manifest available in the launch-window picker. It keeps only one model loaded at a time and preserves your current navigation position and controller modes while switching.
+Prospector opens the package, selects its default model, and makes every model in its manifest available in the launch-window picker. It keeps only one model loaded at a time and preserves per-model navigation positions and controller modes while switching.
 
-By default, Prospector resumes the most recently viewed model and each model's last position. Turn off **Resume last positions** to use the manifest defaults instead, or choose **Reset to Starting Position** while immersed.
+By default, Prospector resumes each model's last position. Turn off **Resume last positions** to use the manifest defaults instead, or choose **Reset to Starting Position** while immersed.
 
 The repository remains asset-free. A placeholder bundled-model catalog is available for development, but normal use does not require embedding USDZ files in the app or committing them to Git.
 
@@ -51,7 +51,7 @@ Create the folder, copy your USDZ files into it, add a `manifest.json`, then giv
 }
 ```
 
-For optional starting positions, the generated `state.json`, and the complete format and validation rules, see [Prospector package format](Documentation/Prospector-Packages.md).
+For optional starting positions, generated per-model state sidecars, and the complete format and validation rules, see [Prospector package format](Documentation/Prospector-Packages.md).
 
 ### Optional bundled models
 
@@ -64,11 +64,15 @@ Pair a game controller (e.g. a DualSense or Xbox controller) with your Vision Pr
 | Input | Action |
 | --- | --- |
 | Left thumbstick | Move |
-| Right thumbstick | Look (yaw) |
+| Right thumbstick | Virtual turn (yaw) |
 | Left / right trigger | Move down / up |
 | D-pad up | Reset height to the terrain surface |
 | D-pad right | Toggle terrain follow (height snaps to the ground as you move) |
 | D-pad left | Toggle speed mode (6× movement) |
+| A | Show or dismiss saved locations |
+| X / Y | Jump to the previous / next saved location |
+
+Single-tap in the immersive view to show the saved-locations panel. While it is visible, movement and turning inputs are paused; use look-and-pinch to choose a location, add the current position, delete a location, or dismiss the panel. Press A again for a reliable controller-only dismissal.
 
 You can also pinch your thumb and middle finger together for half a second (either hand) to toggle the model's visibility.
 
@@ -76,7 +80,7 @@ You can also pinch your thumb and middle finger together for half a second (eith
 
 See [PERFORMANCE.md](PERFORMANCE.md) for the current performance review and Vision Pro profiling plan.
 
-See [TODO.md](TODO.md) for planned named positions and immersion-mode investigations.
+See [TODO.md](TODO.md) for planned immersion-mode investigations.
 
 ## Credits
 

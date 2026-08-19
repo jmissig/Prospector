@@ -35,6 +35,8 @@ struct ImmersiveView: View {
     @State private var navigationRuntime = NavigationRuntime()
     @State private var modeCueText: String?
     @State private var modeCueTask: Task<Void, Never>?
+    @State private var isLocationsPanelPresented = false
+    @State private var activeSavedLocationID: SavedLocation.ID?
     
     let movementSpeed: Float = 2.0
     let speedModeMultiplier: Float = 6.0
@@ -198,8 +200,15 @@ struct ImmersiveView: View {
                 catalogRevision: modelSelection.catalogRevision
             )
         }
+        .onTapGesture {
+            setLocationsPanelPresented(!isLocationsPanelPresented)
+        }
         .overlay(alignment: .top) {
-            if let modeCueText {
+            if isLocationsPanelPresented {
+                locationsPanel
+                    .padding(.top, 60)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            } else if let modeCueText {
                 Text(modeCueText)
                     .font(.headline)
                     .padding(.horizontal, 18)
@@ -218,9 +227,76 @@ struct ImmersiveView: View {
         .onChange(of: modelSelection.poseResetRevision) { _, _ in
             resetToStartingPosition()
         }
+        .onChange(of: controllerManager.toggleLocationsRevision) { _, _ in
+            setLocationsPanelPresented(!isLocationsPanelPresented)
+        }
+        .onChange(of: controllerManager.previousLocationRevision) { _, _ in
+            jumpToAdjacentLocation(offset: -1)
+        }
+        .onChange(of: controllerManager.nextLocationRevision) { _, _ in
+            jumpToAdjacentLocation(offset: 1)
+        }
+        .onChange(of: modelSelection.selectedModel) { _, _ in
+            setLocationsPanelPresented(false)
+            activeSavedLocationID = nil
+        }
         .onDisappear {
             tearDownImmersiveView()
         }
+    }
+
+    private var locationsPanel: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text(modelSelection.selectedModel.displayName)
+                    .font(.headline)
+                Spacer()
+                Button("Dismiss", systemImage: "xmark") {
+                    setLocationsPanelPresented(false)
+                }
+            }
+
+            if modelSelection.savedLocations.isEmpty {
+                ContentUnavailableView(
+                    "No Saved Locations",
+                    systemImage: "mappin.and.ellipse",
+                    description: Text("Add your current position to jump back here later.")
+                )
+                .frame(height: 160)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        ForEach(modelSelection.savedLocations) { location in
+                            HStack {
+                                Button(location.name) {
+                                    jump(to: location)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                Button("Delete \(location.name)", systemImage: "trash", role: .destructive) {
+                                    modelSelection.deleteSavedLocation(location, for: modelSelection.selectedModel)
+                                    if activeSavedLocationID == location.id { activeSavedLocationID = nil }
+                                }
+                                .labelStyle(.iconOnly)
+                            }
+                        }
+                    }
+                }
+                .frame(maxHeight: 260)
+            }
+
+            Button("Add Location", systemImage: "plus") {
+                if let location = modelSelection.addSavedLocation(
+                    position: navigationRuntime.playerPosition,
+                    for: modelSelection.selectedModel
+                ) {
+                    activeSavedLocationID = location.id
+                }
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .padding(20)
+        .frame(width: 420)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24))
     }
 
     @MainActor
@@ -248,6 +324,7 @@ struct ImmersiveView: View {
 
     @MainActor
     private func loadModel(_ model: ModelDescriptor, catalogRevision: Int) async {
+        setLocationsPanelPresented(false)
         modelSelection.loadState = .loading(modelID: model.id)
 
         if let loadedModel {
@@ -387,6 +464,7 @@ struct ImmersiveView: View {
         modeCueText = nil
         contentRoot = nil
         modelSelection.loadState = .idle
+        setLocationsPanelPresented(false)
 
         Task {
             await modelSelection.flushPositionPersistence()
@@ -488,6 +566,43 @@ struct ImmersiveView: View {
             await modelSelection.flushPositionPersistence()
         }
         showModeCue("Reset to Starting Position")
+    }
+
+    @MainActor
+    private func setLocationsPanelPresented(_ isPresented: Bool) {
+        guard isLocationsPanelPresented != isPresented else { return }
+        withAnimation(.easeInOut(duration: 0.18)) {
+            isLocationsPanelPresented = isPresented
+        }
+        controllerManager.navigationEnabled = !isPresented
+    }
+
+    @MainActor
+    private func jump(to location: SavedLocation) {
+        navigationRuntime.playerPosition = location.viewerPositionMeters.simdValue
+        navigationRuntime.currentHeight = navigationRuntime.playerPosition.y
+        activeSavedLocationID = location.id
+        recordCurrentPose()
+        showModeCue(location.name)
+    }
+
+    @MainActor
+    private func jumpToAdjacentLocation(offset: Int) {
+        let locations = modelSelection.savedLocations
+        guard !locations.isEmpty else {
+            showModeCue("No Saved Locations")
+            return
+        }
+        let currentIndex = activeSavedLocationID.flatMap { id in
+            locations.firstIndex(where: { $0.id == id })
+        }
+        let destinationIndex: Int
+        if let currentIndex {
+            destinationIndex = (currentIndex + offset + locations.count) % locations.count
+        } else {
+            destinationIndex = offset < 0 ? locations.count - 1 : 0
+        }
+        jump(to: locations[destinationIndex])
     }
 
     @MainActor
