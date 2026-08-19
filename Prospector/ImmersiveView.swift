@@ -295,7 +295,7 @@ struct ImmersiveView: View {
             setLocationsPanelPresented(!isLocationsPanelPresented)
         }
         .onChange(of: controllerManager.resetHeightRevision) { _, _ in
-            showModeCue("Reset Floor")
+            showModeCue("Land on Surface")
         }
         .onChange(of: controllerManager.terrainFollowEnabled) { _, isEnabled in
             showModeCue(isEnabled ? "Terrain Follow On" : "Terrain Follow Off")
