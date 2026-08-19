@@ -32,7 +32,7 @@ struct ImmersiveView: View {
     @State private var rightPinchActive: Bool = false
     @State private var leftPinchStartTime: TimeInterval?
     @State private var rightPinchStartTime: TimeInterval?
-    @State private var baseRotation: simd_quatf?
+    @State private var modelCoordinateSpace: ModelCoordinateSpace?
     @State private var navigationRuntime = NavigationRuntime()
     @State private var modeCueText: String?
     @State private var modeCueTask: Task<Void, Never>?
@@ -45,6 +45,7 @@ struct ImmersiveView: View {
     let lookRotationSpeed: Float = 2.25
     let defaultHeight: Float = 0
     let terrainProbeHeight: Float = 1.5
+    let minimumWalkableNormalY: Float = 0.35
     let pinchOnDistance: Float = 0.02
     let pinchOffDistance: Float = 0.03
     let pinchHoldDuration: TimeInterval = 0.5
@@ -111,11 +112,18 @@ struct ImmersiveView: View {
                 let speedMultiplier = controllerManager.speedModeEnabled ? speedModeMultiplier : 1
                 var poseChanged = false
                 
-                // Get head orientation if available
+                // Get the physical headset pose. Its yaw steers movement, while its
+                // X/Z displacement moves the terrain probe under the user's real position.
                 var headYaw: Float = 0
+                var devicePosition = SIMD3<Float>.zero
                 if let worldTracking = worldTracking,
                    let deviceAnchor = worldTracking.queryDeviceAnchor(atTimestamp: CACurrentMediaTime()) {
                     let deviceTransform = deviceAnchor.originFromAnchorTransform
+                    devicePosition = SIMD3<Float>(
+                        deviceTransform.columns.3.x,
+                        deviceTransform.columns.3.y,
+                        deviceTransform.columns.3.z
+                    )
                     let forward = SIMD3<Float>(deviceTransform.columns.2.x,
                                               deviceTransform.columns.2.y,
                                               deviceTransform.columns.2.z)
@@ -128,6 +136,9 @@ struct ImmersiveView: View {
                 if controllerManager.shouldResetHeight {
                     navigationRuntime.currentHeight = terrainSurfaceHeight(
                         below: navigationRuntime.playerPosition,
+                        physicalDevicePosition: devicePosition,
+                        virtualYaw: navigationRuntime.virtualYaw,
+                        reportDiagnostics: true,
                         in: entity
                     ) ?? defaultHeight
                     navigationRuntime.playerPosition.y = navigationRuntime.currentHeight
@@ -173,6 +184,8 @@ struct ImmersiveView: View {
                     if controllerManager.terrainFollowEnabled,
                        let terrainHeight = terrainSurfaceHeight(
                         below: navigationRuntime.playerPosition,
+                        physicalDevicePosition: devicePosition,
+                        virtualYaw: navigationRuntime.virtualYaw,
                         in: entity
                        ) {
                         navigationRuntime.currentHeight = terrainHeight
@@ -186,10 +199,16 @@ struct ImmersiveView: View {
                     axis: SIMD3<Float>(0, 1, 0)
                 )
                 let rotatedPosition = simd_act(yawRotation, navigationRuntime.playerPosition)
-                transform.translation = -rotatedPosition
-                if let baseRotation = baseRotation {
-                    transform.rotation = simd_mul(yawRotation, baseRotation)
+                if let modelCoordinateSpace {
+                    let navigationAdjustment = Transform(
+                        rotation: yawRotation,
+                        translation: -rotatedPosition
+                    )
+                    transform = Transform(
+                        matrix: navigationAdjustment.matrix * modelCoordinateSpace.navigationFromModel
+                    )
                 } else {
+                    transform.translation = -rotatedPosition
                     transform.rotation = yawRotation
                 }
                 
@@ -397,7 +416,10 @@ struct ImmersiveView: View {
             contentRoot.addChild(entity)
             sceneEntity = entity
             loadedModel = model
-            baseRotation = entity.transform.rotation
+            modelCoordinateSpace = ModelCoordinateSpace(
+                importedRootTransform: entity.transform,
+                modelBounds: entity.visualBounds(relativeTo: entity)
+            )
             navigationRuntime.apply(modelSelection.poseForLoading(model))
             modelSelection.recordPose(navigationRuntime.pose, for: model)
             modelSelection.loadState = .loaded(modelID: model.id)
@@ -426,7 +448,7 @@ struct ImmersiveView: View {
         sceneEntity?.removeFromParent()
         sceneEntity = nil
         loadedModel = nil
-        baseRotation = nil
+        modelCoordinateSpace = nil
         navigationRuntime.wasPoseChanging = false
     }
 
@@ -694,21 +716,89 @@ struct ImmersiveView: View {
     }
 
     @MainActor
-    private func terrainSurfaceHeight(below position: SIMD3<Float>, in entity: Entity) -> Float? {
-        guard let scene = entity.scene else { return nil }
+    private func terrainSurfaceHeight(
+        below position: SIMD3<Float>,
+        physicalDevicePosition: SIMD3<Float>,
+        virtualYaw: Float,
+        reportDiagnostics: Bool = false,
+        in entity: Entity
+    ) -> Float? {
+        guard let scene = entity.scene,
+              let modelCoordinateSpace else { return nil }
 
-        let bounds = entity.visualBounds(relativeTo: entity)
-        let verticalExtent = max(bounds.extents.y, 1)
-        let origin = SIMD3<Float>(position.x, position.y + terrainProbeHeight, position.z)
-        let rayLength = verticalExtent + abs(origin.y - bounds.center.y) + terrainProbeHeight
+        let yawRotation = simd_quatf(
+            angle: -virtualYaw,
+            axis: SIMD3<Float>(0, 1, 0)
+        )
+        let physicalHorizontalOffset = SIMD3<Float>(
+            physicalDevicePosition.x,
+            0,
+            physicalDevicePosition.z
+        )
+        let probePosition = position + simd_act(yawRotation.inverse, physicalHorizontalOffset)
+        let navigationOrigin = SIMD3<Float>(
+            probePosition.x,
+            position.y + terrainProbeHeight,
+            probePosition.z
+        )
+        let navigationEnd = SIMD3<Float>(
+            probePosition.x,
+            min(
+                modelCoordinateSpace.navigationBounds.min.y - terrainProbeHeight,
+                navigationOrigin.y - 1
+            ),
+            probePosition.z
+        )
+        let modelOrigin = modelCoordinateSpace.modelPoint(fromNavigation: navigationOrigin)
+        let modelEnd = modelCoordinateSpace.modelPoint(fromNavigation: navigationEnd)
+        let modelRay = modelEnd - modelOrigin
+        let rayLength = simd_length(modelRay)
+        guard rayLength > 0 else { return nil }
 
-        return scene.raycast(
-            origin: origin,
-            direction: SIMD3<Float>(0, -1, 0),
+        let candidates = scene.raycast(
+            origin: modelOrigin,
+            direction: modelRay / rayLength,
             length: rayLength,
-            query: .nearest,
+            query: .all,
             relativeTo: entity
-        ).first?.position.y
+        ).compactMap { hit -> TerrainSurfaceCandidate? in
+            let navigationPosition = modelCoordinateSpace.navigationPoint(fromModel: hit.position)
+            let navigationNormal = modelCoordinateSpace.navigationNormal(fromModel: hit.normal)
+            guard navigationNormal.y >= minimumWalkableNormalY else { return nil }
+
+            return TerrainSurfaceCandidate(
+                entityName: hit.entity.name,
+                position: navigationPosition,
+                normal: navigationNormal
+            )
+        }
+
+        let selected = candidates.min {
+            abs($0.position.y - position.y) < abs($1.position.y - position.y)
+        }
+
+#if DEBUG
+        if reportDiagnostics {
+            for (index, candidate) in candidates.enumerated() {
+                print(
+                    "Terrain probe candidate[\(index)] entity=\(candidate.entityName) "
+                        + "height=\(candidate.position.y) normal=\(candidate.normal) "
+                        + "offset=\(candidate.position.y - position.y)"
+                )
+            }
+            if let selected {
+                print(
+                    "Terrain probe selected entity=\(selected.entityName) "
+                        + "height=\(selected.position.y) normal=\(selected.normal) "
+                        + "offset=\(selected.position.y - position.y)"
+                )
+            } else {
+                print("Terrain probe found no upward-facing surface")
+            }
+        }
+#endif
+
+        return selected?.position.y
     }
     
     @MainActor
@@ -768,6 +858,71 @@ private struct ModelLoadRequest: Equatable {
     let model: ModelDescriptor
     let catalogRevision: Int
     let isRealityViewReady: Bool
+}
+
+private struct ModelCoordinateSpace {
+    let navigationFromModel: simd_float4x4
+    let modelFromNavigation: simd_float4x4
+    let navigationBounds: BoundingBox
+    private let navigationNormalFromModel: simd_float3x3
+
+    init(importedRootTransform: Transform, modelBounds: BoundingBox) {
+        // Real asset evidence: USD layer metadata for all three 636 house exports declares
+        // upAxis="Z". RealityKit imports them with an approximately -90-degree root
+        // rotation about X to present Y-up content. An August 2026 inspection reproduced
+        // the floor bug:
+        // treating entity-local -Y as navigation down cast sideways through those models.
+        // Keep every model/navigation conversion behind this full imported transform so
+        // future assets with root translation or scale are correct as well.
+        navigationFromModel = importedRootTransform.matrix
+        modelFromNavigation = simd_inverse(navigationFromModel)
+
+        let linearTransform = simd_float3x3(columns: (
+            SIMD3<Float>(
+                navigationFromModel.columns.0.x,
+                navigationFromModel.columns.0.y,
+                navigationFromModel.columns.0.z
+            ),
+            SIMD3<Float>(
+                navigationFromModel.columns.1.x,
+                navigationFromModel.columns.1.y,
+                navigationFromModel.columns.1.z
+            ),
+            SIMD3<Float>(
+                navigationFromModel.columns.2.x,
+                navigationFromModel.columns.2.y,
+                navigationFromModel.columns.2.z
+            )
+        ))
+        navigationNormalFromModel = simd_transpose(simd_inverse(linearTransform))
+        navigationBounds = modelBounds.transformed(by: navigationFromModel)
+    }
+
+    func navigationPoint(fromModel point: SIMD3<Float>) -> SIMD3<Float> {
+        transformPoint(point, by: navigationFromModel)
+    }
+
+    func modelPoint(fromNavigation point: SIMD3<Float>) -> SIMD3<Float> {
+        transformPoint(point, by: modelFromNavigation)
+    }
+
+    func navigationNormal(fromModel normal: SIMD3<Float>) -> SIMD3<Float> {
+        simd_normalize(navigationNormalFromModel * normal)
+    }
+
+    private func transformPoint(
+        _ point: SIMD3<Float>,
+        by transform: simd_float4x4
+    ) -> SIMD3<Float> {
+        let transformed = transform * SIMD4<Float>(point, 1)
+        return SIMD3<Float>(transformed.x, transformed.y, transformed.z) / transformed.w
+    }
+}
+
+private struct TerrainSurfaceCandidate {
+    let entityName: String
+    let position: SIMD3<Float>
+    let normal: SIMD3<Float>
 }
 
 @MainActor

@@ -55,14 +55,14 @@ Relevant code: `Prospector/ImmersiveView.swift` state and scene-update subscript
 The update callback currently:
 
 - queries the device anchor for head orientation even when the player is stationary;
-- creates and assigns an entity transform even when no movement, rotation, height, or visibility changed;
-- recomputes `visualBounds` whenever terrain-follow or height reset performs a raycast.
+- creates and assigns an entity transform even when no movement, rotation, height, or visibility changed.
+
+The model's navigation-space bounds are now computed once at load time and reused by terrain-follow and height-reset raycasts. This removes the former per-probe `visualBounds` calculation and also accounts for imported root rotation, translation, and scale.
 
 Recommended investigation:
 
 - Query head orientation only when horizontal movement needs it.
 - Track whether pose state changed and assign the entity transform only when dirty.
-- Cache the loaded model's bounds or the derived ray length until the model changes.
 - If terrain raycasts are measurable, throttle them by elapsed time or distance traveled while retaining acceptable ground following.
 
 Relevant code: `Prospector/ImmersiveView.swift`, the `SceneEvents.Update` handler and `terrainSurfaceHeight`.

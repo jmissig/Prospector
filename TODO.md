@@ -4,7 +4,7 @@ This is the product and engineering backlog for Prospector. Performance-specific
 
 ## Vision Pro v1.1 findings
 
-These items were observed on Vision Pro hardware after loading a real `.prospector` package. Treat the suspected causes as open questions until they are reproduced and instrumented.
+These items were observed on Vision Pro hardware after loading a real `.prospector` package. Keep suspected causes distinct from measured ones; the terrain-probe item now records an implemented, evidence-backed fix awaiting hardware validation.
 
 ### Decide what happens to the launch window during immersion
 
@@ -20,13 +20,13 @@ These items were observed on Vision Pro hardware after loading a real `.prospect
 - Add temporary diagnostics that distinguish “toggle action received” from “attachment rendered.”
 - Verify the locations panel appears to the left and the independent controller guide appears bottom-center, then confirm dismiss, Add, jump, and delete on Vision Pro.
 
-### Correct D-pad Up surface landing height
+### Verify corrected D-pad Up and terrain-follow transforms
 
-- D-pad **Up** leaves the viewer at least approximately one meter above the intended collision surface on hardware.
-- Measure the raycast hit position, current viewer/model transform, device-anchor height, and applied `currentHeight` adjustment in a known location.
-- Determine whether the offset comes from the Vision Pro world/floor coordinate frame, head-height handling, model transforms, the chosen collision hit, or another fixed offset.
-- Do not compensate with an unexplained constant until the coordinate-space mismatch or collision-selection behavior is identified.
-- Re-test on more than one model surface so a fix does not merely tune one location.
+- The measured cause was a model/navigation coordinate-space mismatch: the three tested 636 USDZs are Z-up and RealityKit imports them with an approximately -90-degree root rotation, while the old probe incorrectly treated entity-local -Y as navigation down.
+- Prospector now transforms ray endpoints, hit positions, normals, and bounds through the complete imported root transform. It also probes beneath the headset's physical X/Z displacement and chooses the upward-facing hit closest to the current navigation height.
+- Re-test D-pad **Up** at **First Approach** in all three designs and record the remaining offset from the manually corrected height.
+- Verify terrain follow across flat ground, slopes, stairs, and overhangs so the closest-height selection does not jump to another upward-facing surface.
+- Use the Debug terrain-probe log to inspect selected entity, navigation-space height, normal, and offset if hardware results still disagree.
 
 ## Immersion modes
 
