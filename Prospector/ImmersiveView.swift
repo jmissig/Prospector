@@ -20,8 +20,12 @@ struct ImmersiveView: View {
     @State private var updateSubscription: EventSubscription?
     @State private var worldTracking: WorldTrackingProvider?
     @State private var handTracking: HandTrackingProvider?
+    @State private var arkitStartupTask: Task<Void, Never>?
     @State private var handTrackingTask: Task<Void, Never>?
+    @State private var modelLoadingTask: Task<Void, Never>?
+    @State private var modelLoadRequestID = UUID()
     @State private var arkitSession = ARKitSession()
+    @State private var isImmersiveActive = false
     @State private var isContentVisible: Bool = true
     @State private var leftPinchActive: Bool = false
     @State private var rightPinchActive: Bool = false
@@ -47,6 +51,7 @@ struct ImmersiveView: View {
             let root = Entity()
             content.add(root)
             contentRoot = root
+            isImmersiveActive = true
             isRealityViewReady = true
             
             // Create environment sphere
@@ -74,33 +79,7 @@ struct ImmersiveView: View {
                 }
             }
             
-            // Initialize world tracking for head orientation
-            if worldTracking == nil {
-                Task { @MainActor in
-                    let worldProvider = WorldTrackingProvider()
-                    worldTracking = worldProvider
-                    
-                    var providers: [any DataProvider] = [worldProvider]
-                    
-                    if HandTrackingProvider.isSupported {
-                        let handProvider = HandTrackingProvider()
-                        handTracking = handProvider
-                        providers.append(handProvider)
-                        
-                        _ = await arkitSession.requestAuthorization(for: HandTrackingProvider.requiredAuthorizations)
-                    }
-                    
-                    do {
-                        try await arkitSession.run(providers)
-                    } catch {
-                        print("Failed to start ARKit session: \(error)")
-                    }
-                    
-                    if let handTracking = handTracking {
-                        startHandTrackingUpdates(with: handTracking)
-                    }
-                }
-            }
+            startARKit()
             
             updateSubscription = content.subscribe(to: SceneEvents.Update.self) { event in
                 guard let entity = sceneEntity else { return }
@@ -214,7 +193,7 @@ struct ImmersiveView: View {
             isRealityViewReady: isRealityViewReady
         )) {
             guard isRealityViewReady else { return }
-            await loadModel(
+            await replaceModel(
                 modelSelection.selectedModel,
                 catalogRevision: modelSelection.catalogRevision
             )
@@ -240,33 +219,45 @@ struct ImmersiveView: View {
             resetToStartingPosition()
         }
         .onDisappear {
-            recordCurrentPose()
-            Task {
-                await modelSelection.flushPositionPersistence()
-            }
-            updateSubscription?.cancel()
-            handTrackingTask?.cancel()
-            modeCueTask?.cancel()
-            sceneEntity = nil
-            loadedModel = nil
-            contentRoot = nil
-            isRealityViewReady = false
-            modelSelection.loadState = .idle
-            handTrackingTask = nil
-            modeCueTask = nil
+            tearDownImmersiveView()
+        }
+    }
+
+    @MainActor
+    private func replaceModel(_ model: ModelDescriptor, catalogRevision: Int) async {
+        let previousTask = modelLoadingTask
+        previousTask?.cancel()
+        if let previousTask {
+            await previousTask.value
+        }
+
+        guard !Task.isCancelled, isImmersiveActive else { return }
+
+        let requestID = UUID()
+        modelLoadRequestID = requestID
+        let task = Task { @MainActor in
+            await loadModel(model, catalogRevision: catalogRevision)
+        }
+        modelLoadingTask = task
+        await task.value
+
+        if modelLoadRequestID == requestID {
+            modelLoadingTask = nil
         }
     }
 
     @MainActor
     private func loadModel(_ model: ModelDescriptor, catalogRevision: Int) async {
-        guard let contentRoot else { return }
+        modelSelection.loadState = .loading(modelID: model.id)
 
         if let loadedModel {
             modelSelection.recordPose(navigationRuntime.pose, for: loadedModel)
             await modelSelection.flushPositionPersistence()
         }
 
-        modelSelection.loadState = .loading(modelID: model.id)
+        guard isCurrentLoad(model, catalogRevision: catalogRevision) else { return }
+
+        unloadCurrentModel()
 
         do {
             let entity: Entity
@@ -276,17 +267,13 @@ struct ImmersiveView: View {
             case .file(let url):
                 entity = try await Entity(contentsOf: url)
             }
-            await generateStaticMeshCollisionShapes(for: entity)
+            try Task.checkCancellation()
+            try await generateStaticMeshCollisionShapes(for: entity)
 
-            guard !Task.isCancelled,
-                  modelSelection.selectedModel == model,
-                  modelSelection.catalogRevision == catalogRevision else {
-                return
-            }
+            guard isCurrentLoad(model, catalogRevision: catalogRevision),
+                  let contentRoot else { return }
 
             entity.isEnabled = isContentVisible
-            let previousEntity = sceneEntity
-            previousEntity?.removeFromParent()
             contentRoot.addChild(entity)
             sceneEntity = entity
             loadedModel = model
@@ -297,11 +284,7 @@ struct ImmersiveView: View {
         } catch is CancellationError {
             return
         } catch {
-            guard !Task.isCancelled,
-                  modelSelection.selectedModel == model,
-                  modelSelection.catalogRevision == catalogRevision else {
-                return
-            }
+            guard isCurrentLoad(model, catalogRevision: catalogRevision) else { return }
 
             modelSelection.loadState = .failed(
                 modelID: model.id,
@@ -309,12 +292,113 @@ struct ImmersiveView: View {
             )
         }
     }
+
+    @MainActor
+    private func isCurrentLoad(_ model: ModelDescriptor, catalogRevision: Int) -> Bool {
+        !Task.isCancelled
+            && isImmersiveActive
+            && modelSelection.selectedModel == model
+            && modelSelection.catalogRevision == catalogRevision
+    }
+
+    @MainActor
+    private func unloadCurrentModel() {
+        sceneEntity?.removeFromParent()
+        sceneEntity = nil
+        loadedModel = nil
+        baseRotation = nil
+        navigationRuntime.wasPoseChanging = false
+    }
+
+    @MainActor
+    private func startARKit() {
+        guard arkitStartupTask == nil, worldTracking == nil, isImmersiveActive else { return }
+
+        arkitStartupTask = Task { @MainActor in
+            defer {
+                arkitStartupTask = nil
+            }
+
+            let worldProvider = WorldTrackingProvider()
+            worldTracking = worldProvider
+            var providers: [any DataProvider] = [worldProvider]
+
+            if HandTrackingProvider.isSupported {
+                let handProvider = HandTrackingProvider()
+                handTracking = handProvider
+                providers.append(handProvider)
+
+                _ = await arkitSession.requestAuthorization(
+                    for: HandTrackingProvider.requiredAuthorizations
+                )
+                guard !Task.isCancelled, isImmersiveActive else { return }
+            }
+
+            do {
+                try await arkitSession.run(providers)
+                guard !Task.isCancelled, isImmersiveActive else { return }
+
+                if let handTracking {
+                    startHandTrackingUpdates(with: handTracking)
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                guard !Task.isCancelled, isImmersiveActive else { return }
+                print("Failed to start ARKit session: \(error)")
+            }
+        }
+    }
+
+    @MainActor
+    private func stopARKit() {
+        arkitStartupTask?.cancel()
+        handTrackingTask?.cancel()
+        arkitSession.stop()
+        arkitStartupTask = nil
+        handTrackingTask = nil
+        worldTracking = nil
+        handTracking = nil
+        leftPinchActive = false
+        rightPinchActive = false
+        leftPinchStartTime = nil
+        rightPinchStartTime = nil
+    }
+
+    @MainActor
+    private func tearDownImmersiveView() {
+        guard isImmersiveActive || isRealityViewReady else { return }
+
+        isImmersiveActive = false
+        isRealityViewReady = false
+        recordCurrentPose()
+
+        modelLoadingTask?.cancel()
+        modelLoadingTask = nil
+        modelLoadRequestID = UUID()
+        unloadCurrentModel()
+
+        updateSubscription?.cancel()
+        updateSubscription = nil
+        stopARKit()
+
+        modeCueTask?.cancel()
+        modeCueTask = nil
+        modeCueText = nil
+        contentRoot = nil
+        modelSelection.loadState = .idle
+
+        Task {
+            await modelSelection.flushPositionPersistence()
+        }
+    }
     
     @MainActor
     private func startHandTrackingUpdates(with provider: HandTrackingProvider) {
         handTrackingTask?.cancel()
-        handTrackingTask = Task {
+        handTrackingTask = Task { @MainActor in
             for await update in provider.anchorUpdates {
+                guard !Task.isCancelled, isImmersiveActive else { return }
                 handleHandAnchorUpdate(update)
             }
         }
@@ -427,18 +511,25 @@ struct ImmersiveView: View {
     }
 
     @MainActor
-    private func generateStaticMeshCollisionShapes(for entity: Entity) async {
+    private func generateStaticMeshCollisionShapes(for entity: Entity) async throws {
+        try Task.checkCancellation()
+
         if let modelEntity = entity as? ModelEntity,
            let mesh = modelEntity.model?.mesh {
-            if let shape = try? await ShapeResource.generateStaticMesh(from: mesh) {
+            do {
+                let shape = try await ShapeResource.generateStaticMesh(from: mesh)
+                try Task.checkCancellation()
                 modelEntity.collision = CollisionComponent(shapes: [shape], isStatic: true)
-            } else {
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
                 modelEntity.generateCollisionShapes(recursive: false, static: true)
             }
         }
 
         for child in entity.children {
-            await generateStaticMeshCollisionShapes(for: child)
+            try Task.checkCancellation()
+            try await generateStaticMeshCollisionShapes(for: child)
         }
     }
 

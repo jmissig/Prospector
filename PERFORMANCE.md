@@ -10,28 +10,27 @@ The `.prospector` document path itself is not an obvious performance concern. It
 
 `ImmersiveView.generateStaticMeshCollisionShapes(for:)` walks the complete entity hierarchy and generates an exact static-mesh collision shape for every `ModelEntity`. Large architectural/site models can contain many meshes and substantial geometry, making this preprocessing expensive in both time and memory.
 
-The current load task checks cancellation only after the entire hierarchy has been processed. Selecting another model can therefore leave obsolete collision work running until traversal finishes.
+Collision traversal now checks cancellation before processing each entity and after asynchronous static-mesh generation. Model replacement also serializes load operations, so a newer request waits for the canceled request to finish cleanup before beginning another USDZ load. RealityKit's individual static-mesh operation may still take time to return after cancellation, so its cost remains a profiling target.
 
 Recommended investigation:
 
 - Profile collision preprocessing separately from USDZ decoding.
 - Prefer a simplified, terrain-only collision mesh or explicitly designated walkable entities when the source model can provide them.
-- If full-hierarchy traversal remains necessary, check cancellation between entities and stop obsolete work promptly.
 - Minimize collider complexity while preserving terrain-follow behavior.
 
 Relevant code: `Prospector/ImmersiveView.swift`, `loadModel` and `generateStaticMeshCollisionShapes`.
 
-### 2. High: switching temporarily retains two complete models
+### 2. Addressed: switching temporarily retained two complete models
 
-The active entity remains attached while the replacement USDZ loads and generates collision shapes. The prior entity is removed only when the replacement is ready. This provides seamless visual replacement, but peak memory can approach the combined model, texture, and collider cost of both models.
+Model replacement now records and flushes the outgoing pose, removes the active entity, and clears its retained model and rotation state before beginning replacement USDZ loading. The immersive environment is intentionally empty while the replacement loads, and a failed replacement leaves the old model unloaded rather than restoring its memory cost.
 
-For large house/site models, that temporary overlap could cause memory pressure or process termination.
+Replacement requests are serialized. Rapid A → B → C selection cancels obsolete work, waits for its cleanup, and allows only the current request to attach an entity.
 
-Recommended investigation:
+Validation still required on Vision Pro:
 
-- Measure peak resident memory while switching between the two largest representative models.
-- If overlap is unsafe, remove and release the old model before loading the replacement, or at least before generating replacement collision shapes.
-- Preserve a clear loading state if switching becomes intentionally non-atomic.
+- Compare peak resident memory while switching between the two largest representative models.
+- Confirm the old entity disappears before replacement loading and that only the final model attaches after rapid selection changes.
+- Confirm a failed replacement leaves the scene empty and presents the existing load error.
 
 Relevant code: `Prospector/ImmersiveView.swift`, `loadModel`.
 
@@ -64,15 +63,15 @@ Recommended investigation:
 
 Relevant code: `Prospector/ImmersiveView.swift`, the `SceneEvents.Update` handler and `terrainSurfaceHeight`.
 
-### 5. Medium: ARKit startup and shutdown are not fully controlled
+### 5. Addressed: ARKit startup and shutdown are explicitly controlled
 
-World/hand tracking starts in an unretained task. On disappearance, the hand-update task and RealityKit subscription are canceled, but the startup task is not retained or canceled and the `ARKitSession` is not explicitly stopped. A quick immersive-space exit could allow setup to complete after dismissal or keep providers alive longer than intended.
+World/hand tracking startup and hand-anchor consumption now use owned tasks. Startup checks cancellation after authorization and session startup. The shared immersive teardown path cancels startup and hand-update tasks, calls `ARKitSession.stop()`, clears provider references, resets pinch state, cancels RealityKit/model-loading work, and releases the current entity.
 
-Recommended change:
+Validation still required on Vision Pro:
 
-- Retain the startup task and cancel it on disappearance.
-- Explicitly stop the ARKit session when leaving immersive space.
-- Verify repeated enter/exit cycles do not duplicate providers, update streams, or resource usage.
+- Exit while authorization or session startup is pending and confirm no provider resumes afterward.
+- Repeat enter/exit cycles and confirm one session, one hand-update consumer, and one RealityKit update subscription per immersive presentation.
+- Confirm world-relative movement and hand visibility toggling still work after re-entry.
 
 Relevant code: `Prospector/ImmersiveView.swift`, RealityView setup and `onDisappear`.
 
@@ -86,7 +85,7 @@ Do not silently rescale, simplify, or rewrite private source models as part of r
 
 - Manifest coordination and decoding do not run on the main actor.
 - RealityKit model loading is asynchronous.
-- After a completed switch, only the selected model remains attached.
+- At most one app-owned model entity is retained or loading at a time.
 - The launch-window picker has a small, stable data set and no expensive render-time transformations.
 - Retaining security-scoped access for the active package has no obvious ongoing performance cost.
 
