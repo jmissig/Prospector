@@ -16,20 +16,19 @@ struct ImmersiveView: View {
     @State private var contentRoot: Entity?
     @State private var isRealityViewReady = false
     @State private var sceneEntity: Entity?
+    @State private var loadedModel: ModelDescriptor?
     @State private var updateSubscription: EventSubscription?
     @State private var worldTracking: WorldTrackingProvider?
     @State private var handTracking: HandTrackingProvider?
     @State private var handTrackingTask: Task<Void, Never>?
     @State private var arkitSession = ARKitSession()
-    @State private var currentHeight: Float = 0
     @State private var isContentVisible: Bool = true
     @State private var leftPinchActive: Bool = false
     @State private var rightPinchActive: Bool = false
     @State private var leftPinchStartTime: TimeInterval?
     @State private var rightPinchStartTime: TimeInterval?
-    @State private var virtualYaw: Float = 0
     @State private var baseRotation: simd_quatf?
-    @State private var playerPosition = SIMD3<Float>(0, 0, 0)
+    @State private var navigationRuntime = NavigationRuntime()
     @State private var modeCueText: String?
     @State private var modeCueTask: Task<Void, Never>?
     
@@ -115,6 +114,7 @@ struct ImmersiveView: View {
                 let lookInput = controllerManager.lookVector
                 let heightAdjust = controllerManager.heightAdjustment
                 let speedMultiplier = controllerManager.speedModeEnabled ? speedModeMultiplier : 1
+                var poseChanged = false
                 
                 // Get head orientation if available
                 var headYaw: Float = 0
@@ -131,25 +131,31 @@ struct ImmersiveView: View {
                 
                 // Handle height reset
                 if controllerManager.shouldResetHeight {
-                    currentHeight = terrainSurfaceHeight(below: playerPosition, in: entity) ?? defaultHeight
-                    playerPosition.y = currentHeight
+                    navigationRuntime.currentHeight = terrainSurfaceHeight(
+                        below: navigationRuntime.playerPosition,
+                        in: entity
+                    ) ?? defaultHeight
+                    navigationRuntime.playerPosition.y = navigationRuntime.currentHeight
+                    poseChanged = true
                 }
                 
                 // Handle height adjustment from shoulder buttons
                 if heightAdjust != 0 {
-                    currentHeight += heightAdjust * heightSpeed * speedMultiplier * deltaTime
-                    playerPosition.y = currentHeight
+                    navigationRuntime.currentHeight += heightAdjust * heightSpeed * speedMultiplier * deltaTime
+                    navigationRuntime.playerPosition.y = navigationRuntime.currentHeight
+                    poseChanged = true
                 }
 
                 // Handle look rotation from right thumbstick (yaw)
                 if lookInput.x != 0 {
                     let yawDelta = -lookInput.x * lookRotationSpeed * deltaTime
-                    virtualYaw += yawDelta
-                    if virtualYaw > .pi {
-                        virtualYaw -= 2 * .pi
-                    } else if virtualYaw < -.pi {
-                        virtualYaw += 2 * .pi
+                    navigationRuntime.virtualYaw += yawDelta
+                    if navigationRuntime.virtualYaw > .pi {
+                        navigationRuntime.virtualYaw -= 2 * .pi
+                    } else if navigationRuntime.virtualYaw < -.pi {
+                        navigationRuntime.virtualYaw += 2 * .pi
                     }
+                    poseChanged = true
                 }
                 
                 // Handle horizontal movement
@@ -157,7 +163,7 @@ struct ImmersiveView: View {
                     let moveDistance = movementSpeed * speedMultiplier * deltaTime
                     
                     // Apply combined head + virtual yaw to movement vector
-                    let combinedYaw = headYaw + virtualYaw
+                    let combinedYaw = headYaw + navigationRuntime.virtualYaw
                     let cosYaw = cos(combinedYaw)
                     let sinYaw = sin(combinedYaw)
                     
@@ -166,18 +172,25 @@ struct ImmersiveView: View {
                     let rotatedZ = movement.x * sinYaw + movement.y * cosYaw
                     
                     // Apply the rotated movement to the player
-                    playerPosition.x += rotatedX * moveDistance
-                    playerPosition.z -= rotatedZ * moveDistance
+                    navigationRuntime.playerPosition.x += rotatedX * moveDistance
+                    navigationRuntime.playerPosition.z -= rotatedZ * moveDistance
 
                     if controllerManager.terrainFollowEnabled,
-                       let terrainHeight = terrainSurfaceHeight(below: playerPosition, in: entity) {
-                        currentHeight = terrainHeight
-                        playerPosition.y = currentHeight
+                       let terrainHeight = terrainSurfaceHeight(
+                        below: navigationRuntime.playerPosition,
+                        in: entity
+                       ) {
+                        navigationRuntime.currentHeight = terrainHeight
+                        navigationRuntime.playerPosition.y = navigationRuntime.currentHeight
                     }
+                    poseChanged = true
                 }
 
-                let yawRotation = simd_quatf(angle: -virtualYaw, axis: SIMD3<Float>(0, 1, 0))
-                let rotatedPosition = simd_act(yawRotation, playerPosition)
+                let yawRotation = simd_quatf(
+                    angle: -navigationRuntime.virtualYaw,
+                    axis: SIMD3<Float>(0, 1, 0)
+                )
+                let rotatedPosition = simd_act(yawRotation, navigationRuntime.playerPosition)
                 transform.translation = -rotatedPosition
                 if let baseRotation = baseRotation {
                     transform.rotation = simd_mul(yawRotation, baseRotation)
@@ -186,6 +199,13 @@ struct ImmersiveView: View {
                 }
                 
                 entity.transform = transform
+
+                if poseChanged {
+                    recordCurrentPoseIfNeeded()
+                } else if navigationRuntime.wasPoseChanging {
+                    recordCurrentPose()
+                }
+                navigationRuntime.wasPoseChanging = poseChanged
             }
         }
         .task(id: ModelLoadRequest(
@@ -216,11 +236,19 @@ struct ImmersiveView: View {
         .onChange(of: controllerManager.speedModeEnabled) { _, isEnabled in
             showModeCue(isEnabled ? "Speed Mode On" : "Speed Mode Off")
         }
+        .onChange(of: modelSelection.poseResetRevision) { _, _ in
+            resetToStartingPosition()
+        }
         .onDisappear {
+            recordCurrentPose()
+            Task {
+                await modelSelection.flushPositionPersistence()
+            }
             updateSubscription?.cancel()
             handTrackingTask?.cancel()
             modeCueTask?.cancel()
             sceneEntity = nil
+            loadedModel = nil
             contentRoot = nil
             isRealityViewReady = false
             modelSelection.loadState = .idle
@@ -232,6 +260,11 @@ struct ImmersiveView: View {
     @MainActor
     private func loadModel(_ model: ModelDescriptor, catalogRevision: Int) async {
         guard let contentRoot else { return }
+
+        if let loadedModel {
+            modelSelection.recordPose(navigationRuntime.pose, for: loadedModel)
+            await modelSelection.flushPositionPersistence()
+        }
 
         modelSelection.loadState = .loading(modelID: model.id)
 
@@ -256,7 +289,10 @@ struct ImmersiveView: View {
             previousEntity?.removeFromParent()
             contentRoot.addChild(entity)
             sceneEntity = entity
+            loadedModel = model
             baseRotation = entity.transform.rotation
+            navigationRuntime.apply(modelSelection.poseForLoading(model))
+            modelSelection.recordPose(navigationRuntime.pose, for: model)
             modelSelection.loadState = .loaded(modelID: model.id)
         } catch is CancellationError {
             return
@@ -341,6 +377,33 @@ struct ImmersiveView: View {
     private func toggleContentVisibility() {
         isContentVisible.toggle()
         sceneEntity?.isEnabled = isContentVisible
+    }
+
+    @MainActor
+    private func recordCurrentPoseIfNeeded() {
+        let now = CACurrentMediaTime()
+        guard now - navigationRuntime.lastPersistenceSampleTime >= 0.25 else { return }
+
+        navigationRuntime.lastPersistenceSampleTime = now
+        recordCurrentPose()
+    }
+
+    @MainActor
+    private func recordCurrentPose() {
+        guard let loadedModel else { return }
+        modelSelection.recordPose(navigationRuntime.pose, for: loadedModel)
+    }
+
+    @MainActor
+    private func resetToStartingPosition() {
+        guard let loadedModel else { return }
+
+        navigationRuntime.apply(loadedModel.startPose ?? .origin)
+        recordCurrentPose()
+        Task {
+            await modelSelection.flushPositionPersistence()
+        }
+        showModeCue("Reset to Starting Position")
     }
 
     @MainActor
@@ -454,4 +517,25 @@ private struct ModelLoadRequest: Equatable {
     let model: ModelDescriptor
     let catalogRevision: Int
     let isRealityViewReady: Bool
+}
+
+@MainActor
+private final class NavigationRuntime {
+    var currentHeight: Float = 0
+    var virtualYaw: Float = 0
+    var playerPosition = SIMD3<Float>(0, 0, 0)
+    var lastPersistenceSampleTime: TimeInterval = 0
+    var wasPoseChanging = false
+
+    var pose: ViewerPose {
+        ViewerPose(position: playerPosition, yawRadians: virtualYaw)
+    }
+
+    func apply(_ pose: ViewerPose) {
+        playerPosition = pose.position
+        currentHeight = playerPosition.y
+        virtualYaw = pose.yaw
+        lastPersistenceSampleTime = CACurrentMediaTime()
+        wasPoseChanging = false
+    }
 }

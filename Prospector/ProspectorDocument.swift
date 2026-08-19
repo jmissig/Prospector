@@ -16,6 +16,7 @@ struct ProspectorManifest: Decodable {
         let name: String
         let path: String
         let category: String?
+        let startPose: ViewerPose?
     }
 }
 
@@ -23,6 +24,10 @@ struct OpenedProspectorDocument: @unchecked Sendable {
     let name: String
     let models: [ModelDescriptor]
     let defaultModel: ModelDescriptor
+    let packageURL: URL
+    let state: ProspectorState?
+    let stateWarning: String?
+    let stateWritesEnabled: Bool
     let securityScope: SecurityScopedResource
 }
 
@@ -92,6 +97,7 @@ enum ProspectorDocumentError: LocalizedError {
 enum ProspectorDocumentLoader {
     static let packageExtension = "prospector"
     static let manifestFilename = "manifest.json"
+    static let stateFilename = "state.json"
     static let supportedFormatVersion = 1
 
     static func load(from packageURL: URL) throws -> OpenedProspectorDocument {
@@ -183,7 +189,8 @@ enum ProspectorDocumentLoader {
                 id: modelID,
                 displayName: modelName,
                 source: .file(modelURL),
-                category: model.category
+                category: model.category,
+                startPose: try validatedPose(model.startPose, modelID: modelID, source: "manifest")
             )
         }
 
@@ -192,12 +199,84 @@ enum ProspectorDocumentLoader {
             throw ProspectorDocumentError.invalidDefaultModelID(defaultModelID)
         }
 
+        let stateResult = loadState(
+            at: packageURL,
+            validModelIDs: Set(models.map(\.id))
+        )
+
         return OpenedProspectorDocument(
             name: documentName,
             models: models,
             defaultModel: defaultModel,
+            packageURL: packageURL,
+            state: stateResult.state,
+            stateWarning: stateResult.warning,
+            stateWritesEnabled: stateResult.writesEnabled,
             securityScope: securityScope
         )
+    }
+
+    private static func loadState(
+        at packageURL: URL,
+        validModelIDs: Set<String>
+    ) -> (state: ProspectorState?, warning: String?, writesEnabled: Bool) {
+        let stateURL = packageURL.appendingPathComponent(stateFilename, isDirectory: false)
+        guard FileManager.default.fileExists(atPath: stateURL.path) else {
+            return (nil, nil, true)
+        }
+
+        do {
+            let data = try Data(contentsOf: stateURL)
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            let state = try decoder.decode(ProspectorState.self, from: data)
+            try validate(state: state, validModelIDs: validModelIDs)
+            return (state, nil, true)
+        } catch {
+            let message = error.localizedDescription
+            return (
+                nil,
+                "state.json could not be used: \(message)",
+                false
+            )
+        }
+    }
+
+    private static func validate(
+        state: ProspectorState,
+        validModelIDs: Set<String>
+    ) throws {
+        guard state.formatVersion == ProspectorState.supportedFormatVersion else {
+            throw ProspectorStateError.unsupportedFormatVersion(state.formatVersion)
+        }
+        guard validModelIDs.contains(state.currentModelID) else {
+            throw ProspectorStateError.invalidCurrentModelID(state.currentModelID)
+        }
+
+        var stateModelIDs = Set<String>()
+        for modelState in state.modelStates {
+            guard stateModelIDs.insert(modelState.modelID).inserted else {
+                throw ProspectorStateError.duplicateModelID(modelState.modelID)
+            }
+            guard validModelIDs.contains(modelState.modelID),
+                  modelState.pose.isFinite else {
+                throw ProspectorStateError.invalidPose(modelState.modelID)
+            }
+        }
+    }
+
+    private static func validatedPose(
+        _ pose: ViewerPose?,
+        modelID: String,
+        source: String
+    ) throws -> ViewerPose? {
+        guard let pose else { return nil }
+        guard pose.isFinite else {
+            throw ProspectorDocumentError.unreadableManifest(
+                "Model “\(modelID)” has an invalid \(source) start pose."
+            )
+        }
+        return pose
     }
 
     private static func validatedModelURL(

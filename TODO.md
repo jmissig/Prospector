@@ -4,15 +4,6 @@ This is the product and engineering backlog for Prospector. Performance-specific
 
 ## Navigation persistence
 
-### Continuously store the current position within each model
-
-- Track the viewer's current position, yaw, and any other pose state required to resume the same viewpoint.
-- Persist pose updates periodically and when leaving immersive space, switching models, opening another package, or moving the app to the background.
-- Scope stored state to a stable package and model identity so models with the same manifest ID do not share positions accidentally.
-- Restore a model's most recent pose when returning to it, while providing a deliberate way to reset to its authored/default starting position.
-- Keep coordinates in the model's authored coordinate space; do not modify or normalize the USDZ to implement persistence.
-- Avoid writing on every rendered frame. Coalesce or debounce updates and use a final lifecycle save where possible.
-
 ### Save and jump to named positions
 
 - Let the user save the current pose as a named position for the active model.

@@ -12,6 +12,8 @@ I built this for myself (well, I vibe coded it so if any code is janky please do
 
 Prospector opens the package, selects its default model, and makes every model in its manifest available in the launch-window picker. It keeps only one model loaded at a time and preserves your current navigation position and controller modes while switching.
 
+By default, Prospector resumes the most recently viewed model and each model's last position. Turn off **Resume last positions** to use the manifest defaults instead, or choose **Reset to Starting Position** while immersed.
+
 The repository remains asset-free. A placeholder bundled-model catalog is available for development, but normal use does not require embedding USDZ files in the app or committing them to Git.
 
 ## Prospector packages
@@ -38,7 +40,15 @@ Manifest format version 1:
     {
       "id": "model-a",
       "name": "Model A",
-      "path": "Model-A.usdz"
+      "path": "Model-A.usdz",
+      "startPose": {
+        "viewerPositionMeters": {
+          "x": 4.1,
+          "y": 2.0,
+          "z": 16.8
+        },
+        "yawRadians": -0.35
+      }
     },
     {
       "id": "model-b",
@@ -57,8 +67,37 @@ Requirements:
 - Model IDs must be unique, and `defaultModelID` must match one of them.
 - Each `path` must stay inside the package and point to an existing `.usdz` file.
 - `category` is optional and reserved for future grouping in the picker.
+- `startPose` is optional. Position values are meters in authored model coordinates; yaw is in radians.
 
 Malformed manifests, missing assets, unsupported versions, and paths outside the package produce a visible error instead of replacing the active catalog or crashing.
+
+### Position state
+
+Prospector writes a small, human-readable `state.json` beside `manifest.json`. It records the current model, a UTC timestamp, and the last position and yaw for each viewed model:
+
+```json
+{
+  "currentModelID": "model-a",
+  "formatVersion": 1,
+  "modelStates": [
+    {
+      "modelID": "model-a",
+      "updatedAt": "2026-08-19T07:21:03Z",
+      "viewerPositionMeters": {
+        "x": 12.4,
+        "y": 1.7,
+        "z": -8.2
+      },
+      "yawRadians": 1.57
+    }
+  ],
+  "updatedAt": "2026-08-19T07:21:03Z"
+}
+```
+
+Writes occur two seconds after movement stops, at most once every 30 seconds during continuous movement, and when switching models, leaving immersive space, opening another package, or backgrounding the app. If `state.json` is malformed, Prospector leaves it untouched and disables position writes for that package.
+
+To turn a captured location into an authored starting position, copy that model's pose from `state.json` into its `startPose` in `manifest.json`.
 
 ### Optional bundled models
 
@@ -83,7 +122,7 @@ You can also pinch your thumb and middle finger together for half a second (eith
 
 See [PERFORMANCE.md](PERFORMANCE.md) for the current performance review and Vision Pro profiling plan.
 
-See [TODO.md](TODO.md) for planned navigation persistence, saved positions, and immersion-mode investigations.
+See [TODO.md](TODO.md) for planned named positions and immersion-mode investigations.
 
 ## Credits
 

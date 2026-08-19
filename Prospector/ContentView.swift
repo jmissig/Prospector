@@ -34,6 +34,14 @@ struct ContentView: View {
             }
             .disabled(modelSelection.models.count < 2 || modelSelection.isOpeningDocument)
 
+            Toggle("Resume last positions", isOn: $modelSelection.resumeLastPositions)
+                .disabled(modelSelection.documentName == nil)
+
+            Button("Reset to Starting Position") {
+                modelSelection.requestResetToStartingPosition()
+            }
+            .disabled(!isSelectedModelLoaded || !showImmersiveSpace)
+
             documentStatus
             loadStatus
 
@@ -51,7 +59,7 @@ struct ContentView: View {
             .font(.title)
         }
         .padding()
-        .frame(width: 460, height: 320)
+        .frame(width: 460, height: 420)
     }
 
     @ViewBuilder
@@ -61,6 +69,11 @@ struct ContentView: View {
         } else if let message = modelSelection.documentError {
             Label(message, systemImage: "exclamationmark.triangle.fill")
                 .foregroundStyle(.red)
+                .font(.callout)
+                .multilineTextAlignment(.center)
+        } else if let message = modelSelection.persistenceWarning {
+            Label(message, systemImage: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
                 .font(.callout)
                 .multilineTextAlignment(.center)
         }
@@ -84,6 +97,10 @@ struct ContentView: View {
         default:
             EmptyView()
         }
+    }
+
+    private var isSelectedModelLoaded: Bool {
+        modelSelection.loadState == .loaded(modelID: modelSelection.selectedModel.id)
     }
 }
 

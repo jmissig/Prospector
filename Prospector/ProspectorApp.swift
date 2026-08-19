@@ -9,6 +9,7 @@ import SwiftUI
 
 @main
 struct ProspectorApp: App {
+    @Environment(\.scenePhase) private var scenePhase
     @State private var modelSelection = ModelSelection()
 
     var body: some Scene {
@@ -19,9 +20,15 @@ struct ProspectorApp: App {
                         await modelSelection.openPackage(at: url)
                     }
                 }
+                .onChange(of: scenePhase) { _, newPhase in
+                    guard newPhase == .background else { return }
+                    Task {
+                        await modelSelection.flushPositionPersistence()
+                    }
+                }
         }
         .windowResizability(.contentSize)
-        .defaultSize(width: 460, height: 320)
+        .defaultSize(width: 460, height: 420)
         
         ImmersiveSpace(id: "ImmersiveSpace") {
             ImmersiveView(modelSelection: modelSelection)
