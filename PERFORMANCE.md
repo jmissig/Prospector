@@ -6,17 +6,15 @@ The `.prospector` document path is not an obvious bottleneck: manifest decoding 
 
 ## Active investigations
 
-### Preprocess exact collision meshes on the Mac
+### Measure precompiled collision models on Vision Pro
 
-Prospector currently walks every `ModelEntity` and calls `ShapeResource.generateStaticMesh(from:)`. Vision Pro testing confirms model loading is noticeable but completes in less than a minute; USDZ decoding and collision-generation time have not yet been measured separately.
+Prospector supports optional Mac-precompiled `.reality` models and falls back to the source USDZ plus runtime collision generation. A representative proof preserved all 231 collision components and loaded the compiled hierarchy in about 0.14 seconds on the Mac, versus about 1.34 seconds to load the USDZ plus 4.52 seconds to generate collisions. The compiled file grew from 31 MB to 74 MB.
 
-- Profile USDZ loading and collision generation independently.
-- Prototype a Mac-side tool that performs the same exact all-mesh collision generation once and exports a compiled RealityKit entity hierarchy beside the USDZ in the `.prospector` package.
-- Verify that the compiled artifact preserves visuals, hierarchy, transforms, collisions, and raycast behavior on visionOS.
-- Record a source-model fingerprint and generator version so stale output is never mistaken for current geometry.
-- Compare preprocessing time, package size, Vision Pro load time, and peak memory with the current path.
+- Compare compiled and fallback loading time and peak memory on Vision Pro.
+- Verify Land on Surface and terrain-follow behavior against the same source model through both paths.
+- Decide whether future tooling should record a source fingerprint; the current authoring contract requires regeneration whenever the source USDZ changes.
 
-Relevant code: `Prospector/ImmersiveView.swift`, `loadModel` and `generateStaticMeshCollisionShapes`.
+Relevant code: `Prospector/ImmersiveView.swift`, `Prospector/ProspectorDocument.swift`, and `Tools/ProspectorCollisionCompiler/main.swift`.
 
 ### Measure controller-driven SwiftUI invalidation
 

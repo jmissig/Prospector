@@ -10,7 +10,7 @@ This is a small fork of Christian's app. Christian says:
 
 This fork keeps Christian's controller-driven USDZ viewer and adds:
 
-- **Multi-model document packages.** Open one local `.prospector` package from Files to load and switch among multiple USDZ models without embedding private assets in the app.
+- **Multi-model document packages.** Open one local `.prospector` package from Files to load and switch among multiple USDZ models without embedding private assets in the app. Packages can optionally include Mac-precompiled `.reality` models for much faster collision-ready loading while retaining USDZ fallback.
 - **Persistent model state and saved locations.** Each model keeps its own resume position and named locations in a readable JSON sidecar. Add locations in immersive view and jump among them with the panel or controller. Prospector attempts to land on a model surface after loading and reuses that session calibration across the model's saved locations.
 - **In-app controller guidance.** A spatial cheat sheet uses the connected controller's labels and glyphs when available, while brief HUD messages confirm location jumps and mode changes.
 - **Progressive immersion.** Use the Digital Crown to move between a peripheral view of the real world and full immersion.
@@ -64,7 +64,7 @@ Create the folder, copy your USDZ files into it, add a `manifest.json`, then giv
 }
 ```
 
-For optional starting positions, generated per-model state sidecars, and the complete format and validation rules, see [Prospector package format](Documentation/Prospector-Packages.md).
+For optional starting positions, generated per-model state sidecars, compiled `.reality` models, and the complete format and validation rules, see [Prospector package format](Documentation/Prospector-Packages.md).
 
 ### Optional bundled models
 

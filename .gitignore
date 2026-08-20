@@ -5,4 +5,5 @@ xcuserdata/
 .claude/settings.local.json
 DerivedData/
 build/
+.build/
 .swiftpm/

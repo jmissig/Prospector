@@ -61,6 +61,10 @@ struct ImmersiveView: View {
         case controllerGuide
         case hud
     }
+
+    private enum CompiledModelError: Error {
+        case incompleteCollisions
+    }
     
     var body: some View {
         RealityView { content, attachments in
@@ -511,15 +515,11 @@ struct ImmersiveView: View {
         unloadCurrentModel()
 
         do {
-            let entity: Entity
-            switch model.source {
-            case .bundled(let resourceName):
-                entity = try await Entity(named: resourceName, in: Bundle.main)
-            case .file(let url):
-                entity = try await Entity(contentsOf: url)
-            }
+            let (entity, hasCompiledCollisions) = try await loadEntity(for: model)
             try Task.checkCancellation()
-            try await generateStaticMeshCollisionShapes(for: entity)
+            if !hasCompiledCollisions {
+                try await generateStaticMeshCollisionShapes(for: entity)
+            }
 
             guard isCurrentLoad(model, catalogRevision: catalogRevision),
                   let contentRoot else { return }
@@ -548,6 +548,56 @@ struct ImmersiveView: View {
                 message: "Couldn’t load \(model.displayName): \(error.localizedDescription)"
             )
         }
+    }
+
+    @MainActor
+    private func loadEntity(for model: ModelDescriptor) async throws -> (Entity, Bool) {
+        if let compiledURL = model.compiledURL {
+            do {
+                let compiledEntity = try await Entity(contentsOf: compiledURL)
+                try Task.checkCancellation()
+                guard hasCompleteCollisionShapes(compiledEntity) else {
+                    throw CompiledModelError.incompleteCollisions
+                }
+                return (compiledEntity, true)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                // The USDZ remains the required source of truth. A missing, stale, or
+                // unreadable compiled derivative must not make the model unavailable.
+            }
+        }
+
+        let entity: Entity
+        switch model.source {
+        case .bundled(let resourceName):
+            entity = try await Entity(named: resourceName, in: Bundle.main)
+        case .file(let url):
+            entity = try await Entity(contentsOf: url)
+        }
+        return (entity, false)
+    }
+
+    @MainActor
+    private func hasCompleteCollisionShapes(_ entity: Entity) -> Bool {
+        var eligibleModelCount = 0
+        var collisionCount = 0
+
+        func visit(_ entity: Entity) {
+            if let modelEntity = entity as? ModelEntity,
+               modelEntity.model?.mesh != nil {
+                eligibleModelCount += 1
+                if modelEntity.components[CollisionComponent.self] != nil {
+                    collisionCount += 1
+                }
+            }
+            for child in entity.children {
+                visit(child)
+            }
+        }
+
+        visit(entity)
+        return eligibleModelCount > 0 && collisionCount == eligibleModelCount
     }
 
     @MainActor

@@ -15,6 +15,7 @@ struct ProspectorManifest: Decodable {
         let id: String
         let name: String
         let path: String
+        let compiledPath: String?
         let statePath: String?
         let category: String?
         let startPose: ViewerPose?
@@ -60,6 +61,7 @@ enum ProspectorDocumentError: LocalizedError {
     case invalidModelPath(modelID: String)
     case unsupportedModelType(modelID: String)
     case missingModel(modelID: String)
+    case invalidCompiledPath(modelID: String)
     case invalidStatePath(modelID: String)
     case duplicateStatePath(String)
 
@@ -91,6 +93,8 @@ enum ProspectorDocumentError: LocalizedError {
             return "Model “\(modelID)” must reference a .usdz file."
         case .missingModel(let modelID):
             return "The USDZ file for model “\(modelID)” is missing."
+        case .invalidCompiledPath(let modelID):
+            return "Model “\(modelID)” has an invalid compiledPath; it must reference a .reality file inside the package."
         case .invalidStatePath(let modelID):
             return "Model “\(modelID)” has an invalid statePath."
         case .duplicateStatePath(let path):
@@ -189,6 +193,11 @@ enum ProspectorDocumentLoader {
                 modelID: modelID,
                 packageURL: packageURL
             )
+            let compiledURL = try validatedCompiledModelURL(
+                for: model.compiledPath,
+                modelID: modelID,
+                packageURL: packageURL
+            )
             let stateURL = try validatedStateURL(
                 for: model.statePath,
                 modelPath: model.path,
@@ -203,6 +212,7 @@ enum ProspectorDocumentLoader {
                 id: modelID,
                 displayName: modelName,
                 source: .file(modelURL),
+                compiledURL: compiledURL,
                 stateURL: stateURL,
                 category: model.category,
                 startPose: try validatedPose(model.startPose, modelID: modelID, source: "manifest")
@@ -296,6 +306,44 @@ enum ProspectorDocumentLoader {
             throw ProspectorDocumentError.invalidStatePath(modelID: modelID)
         }
         return stateURL
+    }
+
+    private static func validatedCompiledModelURL(
+        for compiledPath: String?,
+        modelID: String,
+        packageURL: URL
+    ) throws -> URL? {
+        guard let compiledPath else { return nil }
+        let trimmedPath = compiledPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedPath.isEmpty,
+              !NSString(string: trimmedPath).isAbsolutePath,
+              URL(fileURLWithPath: trimmedPath).pathExtension.lowercased() == "reality" else {
+            throw ProspectorDocumentError.invalidCompiledPath(modelID: modelID)
+        }
+
+        let packageRoot = packageURL.standardizedFileURL.resolvingSymlinksInPath()
+        let proposedURL = packageURL
+            .appendingPathComponent(trimmedPath, isDirectory: false)
+            .standardizedFileURL
+        let packagePrefix = packageRoot.path.hasSuffix("/") ? packageRoot.path : packageRoot.path + "/"
+        let resolvedParent = proposedURL.deletingLastPathComponent().resolvingSymlinksInPath()
+        let compiledURL = resolvedParent
+            .appendingPathComponent(proposedURL.lastPathComponent)
+            .standardizedFileURL
+
+        guard compiledURL.path.hasPrefix(packagePrefix) else {
+            throw ProspectorDocumentError.invalidCompiledPath(modelID: modelID)
+        }
+
+        // A compiled artifact is an optional cache. A valid but absent path must not
+        // prevent the required USDZ source from loading through the runtime fallback.
+        guard FileManager.default.fileExists(atPath: compiledURL.path) else { return nil }
+        let resolvedURL = compiledURL.resolvingSymlinksInPath()
+        let values = try? resolvedURL.resourceValues(forKeys: [.isRegularFileKey])
+        guard resolvedURL.path.hasPrefix(packagePrefix), values?.isRegularFile == true else {
+            throw ProspectorDocumentError.invalidCompiledPath(modelID: modelID)
+        }
+        return resolvedURL
     }
 
     private static func validatedPose(

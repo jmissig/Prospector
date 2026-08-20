@@ -6,6 +6,7 @@ A `.prospector` document is a package directory containing a versioned manifest 
 My Models.prospector/
 ├── manifest.json
 ├── Model-A.usdz
+├── Model-A.reality
 ├── Model-A.state.json
 └── Model-B.usdz
 ```
@@ -24,6 +25,7 @@ Manifest format version 1:
       "id": "model-a",
       "name": "Model A",
       "path": "Model-A.usdz",
+      "compiledPath": "Model-A.reality",
       "statePath": "Model-A.state.json",
       "startPose": {
         "viewerPositionMeters": {
@@ -50,11 +52,40 @@ Requirements:
 - `name`, every model `id`, and every model `name` must be nonempty.
 - Model IDs must be unique, and `defaultModelID` must match one of them.
 - Each `path` must be relative, remain inside the package, and point to an existing `.usdz` file.
+- `compiledPath` is optional. It must remain inside the package and end in `.reality`. When the file exists and contains collision components for every mesh-bearing model entity, Prospector loads it instead of the USDZ and skips runtime collision generation. A missing, unreadable, or incomplete compiled file falls back to `path` and the normal USDZ collision-generation path.
 - `statePath` is optional but recommended. It must remain inside the package and end in `.state.json`. When omitted, Prospector derives it from the model path (for example, `Model-A.usdz` becomes `Model-A.state.json`).
 - `category` is optional and reserved for future grouping in the picker.
 - `startPose` is optional. Position values are meters in authored model coordinates; yaw is in radians.
 
 Malformed manifests, missing assets, unsupported versions, and paths outside the package produce a visible error instead of replacing the active catalog or crashing.
+
+## Generate a compiled RealityKit model
+
+Prospector includes a small macOS command-line compiler that performs the same recursive collision setup as the visionOS runtime, writes the complete visual-and-collision hierarchy as `.reality`, reloads it, and verifies that all collision components survived serialization.
+
+Build the compiler from the repository root:
+
+```sh
+mkdir -p .build/tools
+xcrun --sdk macosx swiftc \
+  -O \
+  -parse-as-library \
+  -framework RealityKit \
+  Tools/ProspectorCollisionCompiler/main.swift \
+  -o .build/tools/prospector-collision-compiler
+```
+
+Generate or replace a compiled model:
+
+```sh
+.build/tools/prospector-collision-compiler \
+  "/path/My Models.prospector/Model-A.usdz" \
+  "/path/My Models.prospector/Model-A.reality"
+```
+
+The command prints a JSON report containing collision counts, timings, and output size. After it succeeds, add the relative `compiledPath` to that model's manifest entry. Keep the USDZ in the package: it remains the source of truth and the runtime fallback.
+
+Regenerate the `.reality` file whenever its USDZ changes. Prospector validates the compiled hierarchy's collision coverage, but it does not hash large source models on Vision Pro and therefore cannot detect a visually valid but stale cache automatically.
 
 ## Position state
 

@@ -15,6 +15,7 @@ struct ModelDescriptor: Identifiable, Hashable, Sendable {
     let id: String
     let displayName: String
     let source: ModelSource
+    let compiledURL: URL?
     let stateURL: URL?
     let category: String?
     let startPose: ViewerPose?
@@ -23,6 +24,7 @@ struct ModelDescriptor: Identifiable, Hashable, Sendable {
         id: String,
         displayName: String,
         source: ModelSource,
+        compiledURL: URL? = nil,
         stateURL: URL? = nil,
         category: String? = nil,
         startPose: ViewerPose? = nil
@@ -30,6 +32,7 @@ struct ModelDescriptor: Identifiable, Hashable, Sendable {
         self.id = id
         self.displayName = displayName
         self.source = source
+        self.compiledURL = compiledURL
         self.stateURL = stateURL
         self.category = category
         self.startPose = startPose
@@ -46,6 +49,7 @@ struct ModelDescriptor: Identifiable, Hashable, Sendable {
             id: id,
             displayName: displayName,
             source: .bundled(resourceName: resourceName),
+            compiledURL: nil,
             stateURL: nil,
             category: category,
             startPose: startPose

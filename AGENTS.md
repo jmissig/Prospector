@@ -42,7 +42,7 @@ Non-goals:
 Prospector is a small SwiftUI and RealityKit visionOS app targeting visionOS 26.2 or later.
 
 - `Prospector/ContentView.swift` owns the small launch window.
-- `Prospector/ImmersiveView.swift` loads one selected bundled or package-hosted USDZ entity and owns immersive scene movement, collision probing, terrain follow, hand tracking, and mode cues.
+- `Prospector/ImmersiveView.swift` loads one selected bundled or package-hosted model, preferring an optional compiled `.reality` hierarchy and falling back to USDZ plus runtime collisions. It owns immersive scene movement, collision probing, terrain follow, hand tracking, and mode cues.
 - `Prospector/GameControllerManager.swift` maps controller input.
 - `Prospector/ProspectorApp.swift` declares the window and immersive space.
 - `Prospector/ModelCatalog.swift` owns model selection and supports bundled and external file sources.
@@ -68,7 +68,7 @@ Preserve existing controller behavior unless the task explicitly changes it:
 - Preserve locomotion, collision generation, terrain probing, visibility state, and mode cues across the multi-model change unless a deliberate reset is part of the requested behavior.
 - Treat model-specific starting positions or placement adjustments as explicit per-model data when they are introduced; do not scatter filename checks through view code.
 - Surface asset-loading failures clearly. Do not add new force unwraps or `try!` calls for user-selected models.
-- Keep `.prospector` paths relative, contained within the package, and restricted to USDZ files. Do not weaken path or symlink validation.
+- Keep `.prospector` paths relative and contained within the package. Source models remain USDZ; optional compiled derivatives must be `.reality`. Do not weaken path or symlink validation.
 - Retain security-scoped package access for as long as any of its model URLs can be loaded, and balance every successful access call.
 - Keep transient poses and position-only named locations in each model's state sidecar, and authored defaults in the manifest model's optional `startPose`; never promote one into the other silently.
 - Keep model switching understandable from the launch window before adding custom immersive controls.
