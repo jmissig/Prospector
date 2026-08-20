@@ -138,9 +138,11 @@ struct ImmersiveView: View {
                 let shouldResetHeight = controllerManager.resetHeightRevision
                     != navigationRuntime.handledResetHeightRevision
                 let needsInitialSurfaceCalibration = navigationRuntime.needsInitialSurfaceCalibration
+                let pendingSavedLocationCalibration = navigationRuntime.pendingSavedLocationCalibration
                 let needsDevicePose = movement != .zero
                     || shouldResetHeight
                     || needsInitialSurfaceCalibration
+                    || pendingSavedLocationCalibration != nil
                 var hasDevicePose = false
                 if needsDevicePose,
                    let worldTracking = worldTracking,
@@ -167,7 +169,7 @@ struct ImmersiveView: View {
                         virtualYaw: navigationRuntime.virtualYaw,
                         in: entity
                     ) {
-                        navigationRuntime.calibrateVerticalOffset(to: terrainHeight)
+                        navigationRuntime.landOnSurface(at: terrainHeight)
                         poseChanged = true
                     }
                 }
@@ -184,6 +186,25 @@ struct ImmersiveView: View {
                         in: entity
                     ) {
                         navigationRuntime.calibrateVerticalOffset(to: terrainHeight)
+                        poseChanged = true
+                    }
+                }
+
+                // Saved locations are stable model-space reference coordinates. Reprobe
+                // after every jump and derive the shared session offset from that saved Y.
+                // Manual Land on Surface deliberately does not modify this offset.
+                if let pendingSavedLocationCalibration, hasDevicePose {
+                    navigationRuntime.consumeSavedLocationCalibrationAttempt()
+                    if let terrainHeight = terrainSurfaceHeight(
+                        below: navigationRuntime.playerPosition,
+                        physicalDevicePosition: devicePosition,
+                        virtualYaw: navigationRuntime.virtualYaw,
+                        in: entity
+                    ) {
+                        navigationRuntime.calibrateVerticalOffset(
+                            to: terrainHeight,
+                            referenceHeight: pendingSavedLocationCalibration.referenceHeight
+                        )
                         poseChanged = true
                     }
                 }
@@ -829,7 +850,9 @@ struct ImmersiveView: View {
 
     @MainActor
     private func jump(to location: SavedLocation) {
-        navigationRuntime.applyReferencePosition(location.viewerPositionMeters.simdValue)
+        navigationRuntime.beginSavedLocationJump(
+            to: location.viewerPositionMeters.simdValue
+        )
         activeSavedLocationID = location.id
         recordCurrentPose()
         showModeCue(location.name)
@@ -1105,6 +1128,10 @@ private struct TerrainSurfaceCandidate {
 
 @MainActor
 private final class NavigationRuntime {
+    struct SavedLocationCalibration {
+        let referenceHeight: Float
+    }
+
     var currentHeight: Float = 0
     var virtualYaw: Float = 0
     var playerPosition = SIMD3<Float>(0, 0, 0)
@@ -1114,6 +1141,7 @@ private final class NavigationRuntime {
     var isTransformDirty = true
     private var isInitialSurfaceCalibrationPending = false
     private var initialSurfaceCalibrationDeadline: TimeInterval = 0
+    private(set) var pendingSavedLocationCalibration: SavedLocationCalibration?
 
     private var currentModelID: String?
     private var verticalCalibrationOffsets: [String: Float] = [:]
@@ -1149,6 +1177,7 @@ private final class NavigationRuntime {
     func endModel() {
         currentModelID = nil
         isInitialSurfaceCalibrationPending = false
+        pendingSavedLocationCalibration = nil
     }
 
     func applyReferencePose(_ pose: ViewerPose) {
@@ -1165,13 +1194,32 @@ private final class NavigationRuntime {
         isTransformDirty = true
     }
 
-    func calibrateVerticalOffset(to surfaceHeight: Float) {
+    func beginSavedLocationJump(to position: SIMD3<Float>) {
+        applyReferencePosition(position)
+        pendingSavedLocationCalibration = SavedLocationCalibration(
+            referenceHeight: position.y
+        )
+        isInitialSurfaceCalibrationPending = false
+    }
+
+    func calibrateVerticalOffset(
+        to surfaceHeight: Float,
+        referenceHeight: Float? = nil
+    ) {
         guard let currentModelID else { return }
 
-        let referenceHeight = playerPosition.y - verticalCalibrationOffset
-        verticalCalibrationOffsets[currentModelID] = surfaceHeight - referenceHeight
+        let resolvedReferenceHeight = referenceHeight
+            ?? (playerPosition.y - verticalCalibrationOffset)
+        verticalCalibrationOffsets[currentModelID] = surfaceHeight - resolvedReferenceHeight
         calibratedModelIDs.insert(currentModelID)
         isInitialSurfaceCalibrationPending = false
+        pendingSavedLocationCalibration = nil
+        playerPosition.y = surfaceHeight
+        currentHeight = surfaceHeight
+        isTransformDirty = true
+    }
+
+    func landOnSurface(at surfaceHeight: Float) {
         playerPosition.y = surfaceHeight
         currentHeight = surfaceHeight
         isTransformDirty = true
@@ -1181,10 +1229,15 @@ private final class NavigationRuntime {
         isInitialSurfaceCalibrationPending = false
     }
 
+    func consumeSavedLocationCalibrationAttempt() {
+        pendingSavedLocationCalibration = nil
+    }
+
     func resetSessionCalibration() {
         currentModelID = nil
         verticalCalibrationOffsets.removeAll()
         calibratedModelIDs.removeAll()
         isInitialSurfaceCalibrationPending = false
+        pendingSavedLocationCalibration = nil
     }
 }

@@ -11,7 +11,7 @@ This is a small fork of Christian's app. Christian says:
 This fork keeps Christian's controller-driven USDZ viewer and adds:
 
 - **Multi-model document packages.** Open one local `.prospector` package from Files to load and switch among multiple USDZ models without embedding private assets in the app. Packages can optionally include Mac-precompiled `.reality` models while retaining USDZ fallback; Vision Pro testing confirmed that the compiled models load dramatically faster.
-- **Persistent model state and saved locations.** Each model keeps its own resume position and named locations in a readable JSON sidecar. Add locations in immersive view and jump among them with the panel or controller. Prospector attempts to land on a model surface after loading and reuses that session calibration across the model's saved locations.
+- **Persistent model state and saved locations.** Each model keeps its own resume position and named locations in a readable JSON sidecar. Add locations in immersive view and jump among them with the panel or controller. Prospector attempts to land on a model surface after loading and recalibrates the session height at each saved-location jump.
 - **In-app controller guidance.** A spatial cheat sheet uses the connected controller's labels and glyphs when available, while brief HUD messages confirm location jumps and mode changes.
 - **Progressive immersion.** Use the Digital Crown to move between a peripheral view of the real world and full immersion.
 - **Faster, safer model lifecycles.** Model switching releases the outgoing model before loading its replacement, cancels stale work, and manages RealityKit and ARKit resources explicitly.
@@ -85,7 +85,7 @@ Pair a game controller (e.g. a Nintendo Switch Pro Controller, DualSense, or Xbo
 | Left thumbstick | Move |
 | Right thumbstick | Virtual turn (yaw) |
 | Left / right trigger | Move down / up |
-| D-pad up | Land on a model surface and calibrate saved-location heights for the session |
+| D-pad up | Land on a model surface without changing saved-location calibration |
 | D-pad right | Toggle terrain follow (height snaps to the ground as you move) |
 | D-pad left | Toggle speed mode (6× movement) |
 | A | Show or dismiss saved locations |
