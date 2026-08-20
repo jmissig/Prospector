@@ -66,6 +66,12 @@ Create the folder, copy your USDZ files into it, add a `manifest.json`, then giv
 
 For optional starting positions, generated per-model state sidecars, compiled `.reality` models, and the complete format and validation rules, see [Prospector package format](Documentation/Prospector-Packages.md).
 
+### Precompiling collisions
+
+Compiled `.reality` models can be authored visually with Apple's Reality Composer Pro by importing the USDZ, configuring its collision components, and saving the compiled scene beside the source model. This is also well suited to agent-driven or automated preparation: the included Mac compiler performs Prospector's exact recursive collision generation, exports the result, reloads it, and verifies that every mesh-bearing entity retained its collision component. This repository's first compiled package models were generated and validated through that agent-operated workflow.
+
+Whichever workflow you use, keep the original USDZ as the source of truth and fallback. See [Prospector package format](Documentation/Prospector-Packages.md#generate-a-compiled-realitykit-model) for the compiler commands and manifest setup.
+
 ### Optional bundled models
 
 For development builds, you can still drag USDZ files into the `Prospector` folder in Xcode and add matching `ModelDescriptor` values to `ModelCatalog.models`. Those bundled entries are shown until a `.prospector` package is opened.
