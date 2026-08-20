@@ -339,9 +339,14 @@ struct ImmersiveView: View {
                 catalogRevision: modelSelection.catalogRevision
             )
         }
-        .onTapGesture {
-            setLocationsPanelPresented(!isLocationsPanelPresented)
-        }
+        .simultaneousGesture(
+            TapGesture()
+                .targetedToAnyEntity()
+                .onEnded { value in
+                    guard isPartOfLoadedModel(value.entity) else { return }
+                    setLocationsPanelPresented(!isLocationsPanelPresented)
+                }
+        )
         .onChange(of: controllerManager.resetHeightRevision) { _, _ in
             showModeCue("Land on Surface")
         }
@@ -577,7 +582,7 @@ struct ImmersiveView: View {
             do {
                 let compiledEntity = try await Entity(contentsOf: compiledURL)
                 try Task.checkCancellation()
-                guard hasCompleteCollisionShapes(compiledEntity) else {
+                guard configureInputTargetsIfCollisionShapesComplete(compiledEntity) else {
                     throw CompiledModelError.incompleteCollisions
                 }
                 return (compiledEntity, true)
@@ -600,7 +605,7 @@ struct ImmersiveView: View {
     }
 
     @MainActor
-    private func hasCompleteCollisionShapes(_ entity: Entity) -> Bool {
+    private func configureInputTargetsIfCollisionShapesComplete(_ entity: Entity) -> Bool {
         var eligibleModelCount = 0
         var collisionCount = 0
 
@@ -610,6 +615,9 @@ struct ImmersiveView: View {
                 eligibleModelCount += 1
                 if modelEntity.components[CollisionComponent.self] != nil {
                     collisionCount += 1
+                    modelEntity.components.set(InputTargetComponent(
+                        allowedInputTypes: .indirect
+                    ))
                 }
             }
             for child in entity.children {
@@ -619,6 +627,20 @@ struct ImmersiveView: View {
 
         visit(entity)
         return eligibleModelCount > 0 && collisionCount == eligibleModelCount
+    }
+
+    @MainActor
+    private func isPartOfLoadedModel(_ entity: Entity) -> Bool {
+        guard let sceneEntity else { return false }
+
+        var candidate: Entity? = entity
+        while let current = candidate {
+            if current === sceneEntity {
+                return true
+            }
+            candidate = current.parent
+        }
+        return false
     }
 
     @MainActor
@@ -929,6 +951,12 @@ struct ImmersiveView: View {
                 throw CancellationError()
             } catch {
                 modelEntity.generateCollisionShapes(recursive: false, static: true)
+            }
+
+            if modelEntity.components[CollisionComponent.self] != nil {
+                modelEntity.components.set(InputTargetComponent(
+                    allowedInputTypes: .indirect
+                ))
             }
         }
 

@@ -90,6 +90,7 @@ Pair a game controller (e.g. a Nintendo Switch Pro Controller, DualSense, or Xbo
 | D-pad left | Toggle speed mode (6× movement) |
 | A | Show or dismiss saved locations |
 | X / Y | Jump to the previous / next saved location |
+| Look at the model and pinch | Show or dismiss saved locations |
 
 Press A to show the saved-locations panel on the left. A separate controller guide appears below your view, using the connected controller's own button labels and glyphs when available. The panels use your current viewpoint for their initial placement, then remain fixed in the immersive world instead of following your head. The guide includes the stick, trigger, and complete D-pad mapping so the controls do not need to be memorized.
 
