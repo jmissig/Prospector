@@ -340,11 +340,18 @@ struct ImmersiveView: View {
             )
         }
         .simultaneousGesture(
-            TapGesture()
+            TapGesture(count: 2)
                 .targetedToAnyEntity()
+                .exclusively(before: TapGesture().targetedToAnyEntity())
                 .onEnded { value in
-                    guard isPartOfLoadedModel(value.entity) else { return }
-                    setLocationsPanelPresented(!isLocationsPanelPresented)
+                    switch value {
+                    case .first(let doubleTap):
+                        guard isPartOfLoadedModel(doubleTap.entity) else { return }
+                        jumpToAdjacentLocation(offset: 1)
+                    case .second(let singleTap):
+                        guard isPartOfLoadedModel(singleTap.entity) else { return }
+                        setLocationsPanelPresented(!isLocationsPanelPresented)
+                    }
                 }
         )
         .onChange(of: controllerManager.resetHeightRevision) { _, _ in

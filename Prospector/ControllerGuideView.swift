@@ -44,6 +44,23 @@ struct ControllerGuideView: View {
                         .frame(width: 230)
                 }
 
+                Divider()
+
+                HStack(spacing: 10) {
+                    Image(systemName: "hand.tap")
+                        .font(.title3)
+                        .symbolRenderingMode(.hierarchical)
+                        .frame(width: 28)
+                    Text("Double tap")
+                        .font(.subheadline.weight(.medium))
+                    Spacer()
+                    Text("Next location")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Double tap: Next location")
+
                 Label(
                     "Navigation is paused while saved locations are open.",
                     systemImage: "pause.circle"
