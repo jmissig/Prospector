@@ -4,11 +4,11 @@ This is the product and engineering backlog for Prospector. Performance-specific
 
 ## Saved locations and immersive controls
 
-### Investigate pinch-to-show locations
+### Verify direct tap navigation on Vision Pro
 
-- The intended single pinch/tap gesture does not show the saved-locations panel on Vision Pro; controller A remains the documented reliable entry point.
-- Determine whether the immersive gesture is not being recognized, is attached to the wrong RealityKit target, or conflicts with system input handling.
-- Verify opening and dismissal with direct hand input on Vision Pro without changing look-and-pinch interaction inside the visible panel.
+- Verify that a single indirect tap on the model opens and dismisses the saved-locations panel.
+- Verify that a double tap jumps to the next saved location without also toggling the panel.
+- Confirm that model-target gestures do not interfere with look-and-tap interaction inside the visible panel.
 
 ### Add deliberate saved-location editing
 
