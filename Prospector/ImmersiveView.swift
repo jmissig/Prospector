@@ -17,9 +17,8 @@ struct ImmersiveView: View {
     @StateObject private var controllerManager = GameControllerManager()
     @State private var contentRoot: Entity?
     @State private var interfaceRoot: Entity?
-    @State private var hudRoot: Entity?
+    @State private var hudRoot: AnchorEntity?
     @State private var isInterfacePlacementPending = false
-    @State private var isHUDPlacementPending = false
     @State private var isRealityViewReady = false
     @State private var sceneEntity: Entity?
     @State private var loadedModel: ModelDescriptor?
@@ -75,8 +74,8 @@ struct ImmersiveView: View {
             interfaceRoot = interface
             attachPanels(attachments, to: interface)
 
-            let hud = Entity()
-            hud.isEnabled = false
+            let hud = AnchorEntity(.head)
+            hud.anchoring.trackingMode = .continuous
             content.add(hud)
             hudRoot = hud
             attachHUD(attachments, to: hud)
@@ -113,7 +112,6 @@ struct ImmersiveView: View {
             
             updateSubscription = content.subscribe(to: SceneEvents.Update.self) { event in
                 placeInterfaceRelativeToHeadIfNeeded()
-                placeHUDRelativeToHeadIfNeeded()
 
                 guard let entity = sceneEntity else { return }
                 
@@ -280,7 +278,6 @@ struct ImmersiveView: View {
                 attachHUD(attachments, to: hudRoot)
             }
             placeInterfaceRelativeToHeadIfNeeded()
-            placeHUDRelativeToHeadIfNeeded()
         } attachments: {
             Attachment(id: ImmersiveAttachment.locations) {
                 if isLocationsPanelPresented {
@@ -477,45 +474,6 @@ struct ImmersiveView: View {
     }
 
     @MainActor
-    private func placeHUDRelativeToHeadIfNeeded() {
-        guard isHUDPlacementPending,
-              let hudRoot,
-              let devicePose = currentDevicePositionAndYaw() else { return }
-
-        hudRoot.position = devicePose.position
-        hudRoot.orientation = simd_quatf(
-            angle: devicePose.yaw,
-            axis: SIMD3<Float>(0, 1, 0)
-        )
-        hudRoot.isEnabled = true
-        isHUDPlacementPending = false
-    }
-
-    @MainActor
-    private func currentDevicePositionAndYaw() -> (position: SIMD3<Float>, yaw: Float)? {
-        guard let worldTracking,
-              let deviceAnchor = worldTracking.queryDeviceAnchor(
-                atTimestamp: CACurrentMediaTime()
-              ) else { return nil }
-
-        let transform = deviceAnchor.originFromAnchorTransform
-        let position = SIMD3<Float>(
-            transform.columns.3.x,
-            transform.columns.3.y,
-            transform.columns.3.z
-        )
-        let back = SIMD3<Float>(
-            transform.columns.2.x,
-            0,
-            transform.columns.2.z
-        )
-        guard simd_length_squared(back) > 0.0001 else { return nil }
-
-        let normalizedBack = simd_normalize(back)
-        return (position, atan2(normalizedBack.x, normalizedBack.z))
-    }
-
-    @MainActor
     private func replaceModel(_ model: ModelDescriptor, catalogRevision: Int) async {
         let previousTask = modelLoadingTask
         previousTask?.cancel()
@@ -691,7 +649,6 @@ struct ImmersiveView: View {
         isInterfacePlacementPending = false
         hudRoot?.removeFromParent()
         hudRoot = nil
-        isHUDPlacementPending = false
         modelSelection.loadState = .idle
         setLocationsPanelPresented(false)
         navigationRuntime.resetSessionCalibration()
@@ -851,15 +808,22 @@ struct ImmersiveView: View {
     private func showModeCue(_ text: String) {
         modeCueTask?.cancel()
 
-        hudRoot?.isEnabled = false
-        isHUDPlacementPending = true
-
-        withAnimation(.easeOut(duration: 0.15)) {
-            modeCueText = text
-        }
-        placeHUDRelativeToHeadIfNeeded()
-
+        // The invisible anchor follows the full head pose between messages. Re-arm it
+        // here as well so rapid commands can sample a newer pose before freezing.
         modeCueTask = Task {
+            hudRoot?.anchoring.trackingMode = .continuous
+            try? await Task.sleep(for: .milliseconds(20))
+            guard !Task.isCancelled else { return }
+
+            await MainActor.run {
+                // Freeze at the current full head pose, including pitch, instead of
+                // remaining glued to every subsequent head movement.
+                hudRoot?.anchoring.trackingMode = .once
+                withAnimation(.easeOut(duration: 0.15)) {
+                    modeCueText = text
+                }
+            }
+
             try? await Task.sleep(for: .seconds(1.0))
             guard !Task.isCancelled else { return }
 
@@ -872,7 +836,8 @@ struct ImmersiveView: View {
             try? await Task.sleep(for: .seconds(0.6))
             guard !Task.isCancelled else { return }
             await MainActor.run {
-                hudRoot?.isEnabled = false
+                // Re-arm the hidden anchor so the next command samples the latest pose.
+                hudRoot?.anchoring.trackingMode = .continuous
             }
         }
     }
