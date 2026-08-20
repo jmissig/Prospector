@@ -1,8 +1,16 @@
 # Prospector
 
-A little visionOS app for walking around inside large USDZ models (house scans, terrain, etc.) on Apple Vision Pro, with game controller support for movement.
+Prospector is a visionOS app for experiencing house-sized USDZ models at 1:1 scale on Apple Vision Pro. It lets you stand inside an architectural model, see it from different vantage points, and move between those viewpoints without losing your sense of physical grounding.
 
-This is a small fork of Christian's app. Christian says:
+When a model opens, Prospector finds a floor or other walkable surface beneath the starting point and aligns it with your real floor. That collision data can be generated on Vision Pro or precomputed in Reality Composer Pro for much faster loading.
+
+A game controller lets you move freely through the model, including turning, changing height, and following the terrain. Continuous virtual movement can be uncomfortable, though, so Prospector also lets you save places that feel useful and jump instantly between them. Once those locations are saved, you can move to the next one with a double tap—no controller required—and then simply look around.
+
+Use the Digital Crown to choose how present the model feels: view it through a portal with the real world around you, or become fully surrounded by it.
+
+## About this fork
+
+Prospector is a fork of [Christian Selig's original app](https://github.com/christianselig/Prospector). Christian describes it this way:
 
 > I built this for myself (well, I vibe coded it so if any code is janky please don't yell at me), so it's rough around the edges and not the most straightforward to use, but it should be a fun starting point if you want to explore your own large models in an immersive space.
 
@@ -17,93 +25,44 @@ This fork keeps Christian's controller-driven USDZ viewer and adds:
 - **Faster, safer model lifecycles.** Model switching releases the outgoing model before loading its replacement, cancels stale work, and manages RealityKit and ARKit resources explicitly.
 - **Architectural USDZ coordinate fixes.** Collision probing and terrain following correctly account for Z-up USDZ files, imported root transforms, model scale, and the viewer's physical position.
 
-## Setup
+## Getting started
 
 1. Set your development team in the project's Signing & Capabilities settings.
-2. Build and run on Apple Vision Pro (visionOS 26.2+).
-3. Put a `.prospector` package in iCloud Drive and tap it in Files.
+2. Build and run on Apple Vision Pro (visionOS 26.2 or later).
+3. Open a `.prospector` package from Files.
 
-Prospector opens the package, selects its default model, and makes every model in its manifest available in the launch-window picker. It keeps only one model loaded at a time and preserves per-model navigation positions and controller modes while switching.
+Prospector selects the package's default model and makes its other models available in the launch window. Each model resumes where you left it when saved state is available; otherwise it starts from the position defined by the package.
 
-The immersive view starts partially immersed. Turn the Digital Crown to reveal more of the real world around the periphery or expand the model to full immersion.
+For how to assemble a package, add optional starting positions, or precompile collision data for faster loading, see [Prospector package format](Documentation/Prospector-Packages.md).
 
-Prospector automatically resumes each model's last position when saved state is available, otherwise it uses the model's manifest starting position.
+## Moving through a model
 
-The repository remains asset-free. A placeholder bundled-model catalog is available for development, but normal use does not require embedding USDZ files in the app or committing them to Git.
-
-## Prospector packages
-
-A `.prospector` document is a folder that Files presents as one tappable package:
-
-```text
-My Models.prospector/
-├── manifest.json
-├── Model-A.usdz
-└── Model-B.usdz
-```
-
-Create the folder, copy your USDZ files into it, add a `manifest.json`, then give the folder a `.prospector` extension. A minimal manifest looks like this:
-
-```json
-{
-  "formatVersion": 1,
-  "name": "My Models",
-  "defaultModelID": "model-a",
-  "models": [
-    {
-      "id": "model-a",
-      "name": "Model A",
-      "path": "Model-A.usdz"
-    },
-    {
-      "id": "model-b",
-      "name": "Model B",
-      "path": "Model-B.usdz"
-    }
-  ]
-}
-```
-
-For optional starting positions, generated per-model state sidecars, compiled `.reality` models, and the complete format and validation rules, see [Prospector package format](Documentation/Prospector-Packages.md).
-
-### Precompiling collisions
-
-Compiled `.reality` models can be authored visually with Apple's Reality Composer Pro by importing the USDZ, configuring its collision components, and saving the compiled scene beside the source model. This is also well suited to agent-driven or automated preparation: the included Mac compiler performs Prospector's exact recursive collision generation, exports the result, reloads it, and verifies that every mesh-bearing entity retained its collision component. This repository's first compiled package models were generated and validated through that agent-operated workflow.
-
-Whichever workflow you use, keep the original USDZ as the source of truth and fallback. See [Prospector package format](Documentation/Prospector-Packages.md#generate-a-compiled-realitykit-model) for the compiler commands and manifest setup.
-
-### Optional bundled models
-
-For development builds, you can still drag USDZ files into the `Prospector` folder in Xcode and add matching `ModelDescriptor` values to `ModelCatalog.models`. Those bundled entries are shown until a `.prospector` package is opened.
-
-## Controls
-
-Pair a game controller (e.g. a Nintendo Switch Pro Controller, DualSense, or Xbox controller) with your Vision Pro. Movement is relative to the direction you're looking.
+Pair a game controller, such as a Nintendo Switch Pro Controller, DualSense, or Xbox controller, with Vision Pro. Movement follows the direction you are looking.
 
 | Input | Action |
 | --- | --- |
 | Left thumbstick | Move |
-| Right thumbstick | Virtual turn (yaw) |
+| Right thumbstick | Turn |
 | Left / right trigger | Move down / up |
-| D-pad up | Land on a model surface without changing saved-location calibration |
-| D-pad right | Toggle terrain follow (height snaps to the ground as you move) |
-| D-pad left | Toggle speed mode (6× movement) |
+| D-pad up | Land on a model surface |
+| D-pad right | Toggle terrain follow |
+| D-pad left | Toggle faster movement |
 | A | Show or dismiss saved locations |
 | X / Y | Jump to the previous / next saved location |
 | Look at the model and tap | Show or dismiss saved locations |
 | Look at the model and double tap | Jump to the next saved location |
 
-Press A to show the saved-locations panel on the left. A separate controller guide appears below your view, using the connected controller's own button labels and glyphs when available. The panels use your current viewpoint for their initial placement, then remain fixed in the immersive world instead of following your head. The guide includes the stick, trigger, and complete D-pad mapping so the controls do not need to be memorized.
+Press A to open the saved-locations panel. Movement pauses while it is visible, giving you a steady view as you add the current position or choose somewhere to revisit. Press A again to dismiss it, or use look and tap.
 
-While the panels are visible, movement and turning inputs are paused; use look-and-pinch to choose a location, add the current position, or dismiss the locations panel. Press A again for a reliable controller-only dismissal. Saved locations cannot be deleted in the immersive panel, preventing accidental removal.
+The controller guide appears below your view and adapts to the connected controller's own labels and glyphs. Both panels stay where they first appear in the immersive world instead of following your head.
 
-You can also pinch your thumb and middle finger together for half a second (either hand) to toggle the model's visibility.
+You can also tap your thumb and middle finger together and hold for half a second, using either hand, to hide or reveal the model.
 
-## Development
+## Project notes
 
-See [PERFORMANCE.md](PERFORMANCE.md) for the current performance review and Vision Pro profiling plan.
-
-See [TODO.md](TODO.md) for current product and hardware follow-ups.
+- [Prospector package format](Documentation/Prospector-Packages.md)
+- [Performance review and Vision Pro profiling plan](PERFORMANCE.md)
+- [Product and hardware follow-ups](TODO.md)
 
 ## Credits
 
