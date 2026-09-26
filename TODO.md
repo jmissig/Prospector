@@ -30,11 +30,6 @@ This is the product and engineering backlog for Prospector. Performance-specific
 
 ## Navigation
 
-### Diagnose intermittent controller movement stalls
-
-- The returned 1.6.2 headset log shows healthy frame updates and correct pause state, but almost no analog callbacks; panel toggles arrive as model taps, not raw A callbacks. The isolated gamepad-routing declaration is now added; verify sustained sticks/triggers and raw A callbacks on Vision Pro.
-- See [investigation, headset evidence, and diagnostic log interpretation](Documentation/Navigation-Stall-Investigation.md). Preserve baseline scheduling and logging until hardware confirmation.
-
 ### Verify session floor calibration
 
 - Prospector attempts **Land on Surface** once after a model first loads, then recalibrates the shared per-model session offset at each saved-location jump.

@@ -44,6 +44,7 @@ Prospector is a small SwiftUI and RealityKit visionOS app targeting visionOS 26.
 - `Prospector/ContentView.swift` owns the small launch window.
 - `Prospector/ImmersiveView.swift` loads one selected bundled or package-hosted model, preferring an optional compiled `.reality` hierarchy and falling back to USDZ plus runtime collisions. It owns immersive scene movement, collision probing, terrain follow, hand tracking, and mode cues.
 - `Prospector/GameControllerManager.swift` maps controller input.
+- The immersive RealityView must retain `.handlesGameControllerEvents(matching: .gamepad)`. Without it, visionOS can translate gamepad actions into model taps instead of delivering navigation input; adding it resolved the reported headset stall in 1.6.3.
 - `Prospector/ProspectorApp.swift` declares the window and immersive space.
 - `Prospector/ModelCatalog.swift` owns model selection and supports bundled and external file sources.
 - `Prospector/ProspectorDocument.swift` validates versioned `.prospector` package manifests and retains security-scoped access to their USDZ files.

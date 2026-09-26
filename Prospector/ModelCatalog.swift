@@ -121,10 +121,6 @@ final class ModelSelection {
 
     @ObservationIgnored private var documentAccess: SecurityScopedResource?
     @ObservationIgnored private var positionPersistence: PositionPersistenceCoordinator?
-    @ObservationIgnored private var navigationDiagnosticWriter: NavigationDiagnosticWriter?
-    @ObservationIgnored private var navigationDiagnosticTask: Task<Void, Never>?
-    @ObservationIgnored private var navigationDiagnosticSession = UUID()
-    @ObservationIgnored private var navigationDiagnosticSequence = 0
     @ObservationIgnored private var openRequestID = UUID()
 
     init(
@@ -165,19 +161,11 @@ final class ModelSelection {
             refreshSavedLocations()
             documentName = document.name
             documentAccess = document.securityScope
-            navigationDiagnosticWriter = NavigationDiagnosticWriter(scope: document.securityScope)
-            navigationDiagnosticSession = UUID()
-            navigationDiagnosticSequence = 0
             persistenceWarning = document.stateWarning
             terrainWarning = nil
             catalogRevision += 1
             loadState = .idle
             isOpeningDocument = false
-            let info = Bundle.main.infoDictionary ?? [:]
-            let version = info["CFBundleShortVersionString"] as? String ?? "unknown"
-            let build = info["CFBundleVersion"] as? String ?? "unknown"
-            appendNavigationDiagnostic(source: "package opened", details:
-                "app=\(version) build=\(build) os=\(ProcessInfo.processInfo.operatingSystemVersionString) clock=SceneEvents.Update diagnosticSchema=1")
         } catch is CancellationError {
             guard requestID == openRequestID else { return }
             isOpeningDocument = false
@@ -185,25 +173,6 @@ final class ModelSelection {
             guard requestID == openRequestID else { return }
             documentError = error.localizedDescription
             isOpeningDocument = false
-        }
-    }
-
-    func appendNavigationDiagnostic(source: String, details: String) {
-        guard let writer = navigationDiagnosticWriter else { return }
-        navigationDiagnosticSequence += 1
-        let entry = NavigationDiagnosticEntry(timestamp: .now,
-            uptimeSeconds: ProcessInfo.processInfo.systemUptime,
-            sessionID: navigationDiagnosticSession, sequence: navigationDiagnosticSequence,
-            source: source, details: details)
-        let previous = navigationDiagnosticTask
-        let session = navigationDiagnosticSession
-        navigationDiagnosticTask = Task { [weak self] in
-            await previous?.value
-            do { try await writer.append(entry) }
-            catch {
-                guard let self, self.navigationDiagnosticSession == session else { return }
-                self.persistenceWarning = "Navigation diagnostic logging stopped: \(error.localizedDescription)"
-            }
         }
     }
 
@@ -243,7 +212,6 @@ final class ModelSelection {
     }
 
     func flushPositionPersistence() async {
-        await navigationDiagnosticTask?.value
         guard let positionPersistence else { return }
 
         if let warning = await positionPersistence.flush() {

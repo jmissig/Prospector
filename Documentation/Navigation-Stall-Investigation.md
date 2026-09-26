@@ -1,5 +1,16 @@
 # Controller movement stall investigation
 
+## Resolution
+
+Julian reported on 2026-09-26 at 09:42 PDT that 1.6.3 appears to fix the
+controller movement problem on Vision Pro. The fix is the immersive view's
+`.handlesGameControllerEvents(matching: .gamepad)` declaration, not a scheduling
+or terrain change. At his request, temporary navigation/terrain diagnostic
+events, per-frame counters, and the package log writer have been removed.
+Existing logs inside packages are left untouched; subsequent builds no longer
+append to them. The sections below are historical evidence, including the
+diagnostic instructions for 1.6.2/1.6.3, not current logging behavior.
+
 ## Headset evidence: 2026-09-26, 09:16–09:17 PDT
 
 The returned package contains a complete 22-entry session from app 1.6.2,

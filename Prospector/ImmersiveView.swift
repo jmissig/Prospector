@@ -8,11 +8,9 @@
 import SwiftUI
 import RealityKit
 import ARKit
-import OSLog
 import GameController
 
 struct ImmersiveView: View {
-    private static let navigationLog = Logger(subsystem: "Prospector", category: "Navigation")
     @Environment(\.dismissImmersiveSpace) private var dismissImmersiveSpace
     let modelSelection: ModelSelection
     let immersivePresentation: ImmersivePresentationState
@@ -74,9 +72,6 @@ struct ImmersiveView: View {
     
     var body: some View {
         RealityView { content, attachments in
-            controllerManager.onNavigationDiagnostic = { source, details in
-                modelSelection.appendNavigationDiagnostic(source: source, details: details)
-            }
             let root = Entity()
             content.add(root)
             contentRoot = root
@@ -126,9 +121,6 @@ struct ImmersiveView: View {
             startARKit()
             
             updateSubscription = content.subscribe(to: SceneEvents.Update.self) { event in
-                navigationRuntime.diagnosticFrameCount += 1
-                navigationRuntime.diagnosticLastFrameTime = CACurrentMediaTime()
-                defer { navigationRuntime.diagnosticCompletedFrameCount += 1 }
                 placeInterfaceRelativeToHeadIfNeeded()
 
                 guard let entity = sceneEntity else { return }
@@ -299,7 +291,6 @@ struct ImmersiveView: View {
                     }
 
                     entity.transform = transform
-                    navigationRuntime.diagnosticTransformCount += 1
                     // Landscape is already Y-up navigation-space geometry, not model-local.
                     landscapeEntity?.transform = Transform(rotation: yawRotation, translation: -rotatedPosition)
                     terrainLayer.updateNavigation(Transform(rotation: yawRotation, translation: -rotatedPosition))
@@ -371,7 +362,6 @@ struct ImmersiveView: View {
                         jumpToAdjacentLocation(offset: 1)
                     case .second(let singleTap):
                         guard isPartOfLoadedModel(singleTap.entity) else { return }
-                        logNavigationState(source: "model tap")
                         setLocationsPanelPresented(!isLocationsPanelPresented)
                     }
                 }
@@ -389,7 +379,6 @@ struct ImmersiveView: View {
             resetToStartingPosition()
         }
         .onChange(of: controllerManager.toggleLocationsRevision) { _, _ in
-            logNavigationState(source: "controller A observed")
             setLocationsPanelPresented(!isLocationsPanelPresented)
         }
         .onChange(of: controllerManager.previousLocationRevision) { _, _ in
@@ -611,10 +600,7 @@ struct ImmersiveView: View {
             let yaw = simd_quatf(angle: -navigationRuntime.virtualYaw, axis: SIMD3<Float>(0, 1, 0))
             terrainLayer.updateNavigation(Transform(rotation: yaw, translation: -simd_act(yaw, navigationRuntime.playerPosition)))
             terrainLayer.load(model.terrain, revision: catalogRevision, parent: contentRoot,
-                              scope: modelSelection.packageAccessForLoading,
-                              diagnostic: { event in
-                modelSelection.appendNavigationDiagnostic(source: "terrain", details: event)
-            }) { warning in
+                              scope: modelSelection.packageAccessForLoading) { warning in
                 guard isCurrentLoad(model, catalogRevision: catalogRevision) else { return }
                 modelSelection.terrainWarning = warning
             }
@@ -778,8 +764,6 @@ struct ImmersiveView: View {
     @MainActor
     private func tearDownImmersiveView() {
         guard isImmersiveActive || isRealityViewReady else { return }
-        logNavigationState(source: "immersive teardown")
-        controllerManager.onNavigationDiagnostic = nil
 
         isImmersiveActive = false
         isRealityViewReady = false
@@ -912,17 +896,8 @@ struct ImmersiveView: View {
     }
 
     @MainActor
-    private func logNavigationState(source: String) {
-        let age = navigationRuntime.diagnosticLastFrameTime.map { CACurrentMediaTime() - $0 } ?? -1
-        Self.navigationLog.info("\(source, privacy: .public): panel=\(isLocationsPanelPresented) frames=\(navigationRuntime.diagnosticFrameCount) completed=\(navigationRuntime.diagnosticCompletedFrameCount) frameAgeSeconds=\(age) transforms=\(navigationRuntime.diagnosticTransformCount) modelPresent=\(sceneEntity != nil) modelEnabled=\(sceneEntity?.isEnabled ?? false) \(controllerManager.navigationDiagnosticSummary, privacy: .public)")
-        modelSelection.appendNavigationDiagnostic(source: source, details:
-            "panel=\(isLocationsPanelPresented) frames=\(navigationRuntime.diagnosticFrameCount) completed=\(navigationRuntime.diagnosticCompletedFrameCount) frameAgeSeconds=\(age) transforms=\(navigationRuntime.diagnosticTransformCount) modelPresent=\(sceneEntity != nil) modelEnabled=\(sceneEntity?.isEnabled ?? false) \(controllerManager.navigationDiagnosticSummary)")
-    }
-
-    @MainActor
     private func setLocationsPanelPresented(_ isPresented: Bool) {
         guard isLocationsPanelPresented != isPresented else { return }
-        logNavigationState(source: isPresented ? "panel will open" : "panel will close")
 
         if isPresented {
             interfaceRoot?.isEnabled = false
@@ -1228,11 +1203,6 @@ private struct TerrainSurfaceCandidate {
 
 @MainActor
 private final class NavigationRuntime {
-    // Non-observed counters: diagnostics must not invalidate SwiftUI every frame.
-    var diagnosticFrameCount = 0
-    var diagnosticCompletedFrameCount = 0
-    var diagnosticTransformCount = 0
-    var diagnosticLastFrameTime: TimeInterval?
     struct SavedLocationCalibration {
         let referenceHeight: Float
     }
