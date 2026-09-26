@@ -75,12 +75,12 @@ Use **8192×4096** where possible. **4096×2048** is the supported lower-resolut
 alternative (point `texturePath` at that image). Equirectangular images must be
 2:1 and at least 4096×2048. The app does not rewrite, resize or generate imagery.
 It reads source dimensions through ImageIO and compares them with the actual
-loaded `TextureResource.width`/`height`, reporting both in the launch window and
-in one Environment-category console entry per successful texture load.
+loaded `TextureResource.width`/`height`, reporting both in one Environment-category console entry per successful texture
+load. Panorama diagnostics stay out of the launch window.
 
-If RealityKit returns smaller dimensions, the status explicitly reports the
+If RealityKit returns smaller dimensions, the console entry explicitly reports the
 change. A loaded 4096×2048 resource is accepted; below that minimum or with a
-non-2:1 aspect ratio, the backdrop falls back to Meadow with an explanation.
+non-2:1 aspect ratio, the backdrop falls back to Meadow with a console warning.
 Decode/resource failures also use Meadow, not the retired stretch mapping.
 Invalid configuration (unsafe paths, nonfinite placement, invalid radius, unknown
 mode) still rejects the manifest. Meadow retains its original bundled texture
@@ -229,7 +229,7 @@ Regenerate the `.reality` file whenever its USDZ changes. Prospector validates t
 
 ## Position state
 
-Prospector writes one human-readable state sidecar per model. It records the model's last position and yaw plus its saved locations:
+Prospector writes one human-readable state sidecar per model. It records the model's last position and yaw plus its saved locations. During an app session, the current yaw overrides each incoming model's saved or authored yaw; positions remain per-model. Leaving/re-entering immersion preserves that session yaw. On a fresh app launch, the first loaded model seeds yaw from its resume pose (or `startPose` when not resuming). Explicit reset to starting position still applies the authored starting yaw. Sidecar yaw remains readable for initial launch and backward compatibility:
 
 ```json
 {

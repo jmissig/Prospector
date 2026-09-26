@@ -94,6 +94,10 @@ final class ModelSelection {
     private(set) var poseResetRevision = 0
     private(set) var savedLocations: [SavedLocation] = []
 
+    // App-session orientation survives model switches and immersive view recreation.
+    // Only the first loaded pose seeds it from model state.
+    @ObservationIgnored private var sessionYaw: Float?
+
     var resumeLastPositions: Bool {
         didSet {
             UserDefaults.standard.set(resumeLastPositions, forKey: Self.resumePreferenceKey)
@@ -112,7 +116,6 @@ final class ModelSelection {
         }
     }
 
-    var environmentStatus: String?
     var terrainWarning: String?
 
     // Captured by optional asset tasks to retain the originating package scope.
@@ -178,17 +181,22 @@ final class ModelSelection {
     }
 
     func recordPose(_ pose: ViewerPose, for model: ModelDescriptor) {
+        guard pose.isFinite else { return }
+        sessionYaw = pose.yaw
         guard models.contains(model) else { return }
         positionPersistence?.record(pose: pose, for: model.id)
     }
 
     func poseForLoading(_ model: ModelDescriptor) -> ViewerPose {
+        let modelPose: ViewerPose
         if resumeLastPositions,
            let persistedPose = positionPersistence?.pose(for: model.id) {
-            return persistedPose
+            modelPose = persistedPose
+        } else {
+            modelPose = model.startPose ?? .origin
         }
 
-        return model.startPose ?? .origin
+        return ViewerPose(position: modelPose.position, yawRadians: sessionYaw ?? modelPose.yaw)
     }
 
     func requestResetToStartingPosition() {

@@ -100,12 +100,6 @@ struct ContentView: View {
         case .loaded(let modelID) where modelID == modelSelection.selectedModel.id:
             Label("Model loaded", systemImage: "checkmark.circle.fill")
                 .foregroundStyle(.secondary)
-            if let status = modelSelection.environmentStatus {
-                Text(status)
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
-                    .multilineTextAlignment(.center)
-            }
             if let warning = modelSelection.terrainWarning {
                 Text(warning)
                     .foregroundStyle(.orange)

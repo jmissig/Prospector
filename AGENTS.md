@@ -46,7 +46,7 @@ Prospector is a small SwiftUI and RealityKit visionOS app targeting visionOS 26.
 - `Prospector/GameControllerManager.swift` maps controller input.
 - The immersive RealityView must retain `.handlesGameControllerEvents(matching: .gamepad)`. Without it, visionOS can translate gamepad actions into model taps instead of delivering navigation input; adding it resolved the reported headset stall in 1.6.3.
 - `Prospector/ProspectorApp.swift` declares the window and immersive space.
-- `Prospector/ModelCatalog.swift` owns model selection and supports bundled and external file sources.
+- `Prospector/ModelCatalog.swift` owns model selection and supports bundled and external file sources. It also retains app-session yaw across model switches and immersive-view recreation; only the first loaded model seeds yaw from its persisted/authored pose. Positions remain per-model, and explicit starting-position reset can change yaw.
 - `Prospector/ProspectorDocument.swift` validates versioned `.prospector` package manifests and retains security-scoped access to their USDZ files.
 - `Prospector/PositionPersistence.swift` reads and writes per-model `.state.json` pose/location sidecars and owns the coalesced write cadence.
 - `Prospector/LandscapeEnvironment.swift` supports only explicit equirectangular panoramas; absent projection (including legacy landmark manifests) uses original Meadow. Preserve linear latitude, documented azimuth sign, loaded-dimension reporting and visual-only navigation semantics. `Tools/PanoramaChecks/run.sh` validates synthetic 4K/8K images on Mac; headset verification is separate.

@@ -33,7 +33,7 @@ This fork keeps Christian's controller-driven USDZ viewer and adds:
 2. Build and run on Apple Vision Pro (visionOS 26.2 or later).
 3. Open a `.prospector` package from Files.
 
-Prospector selects the package's default model and makes its other models available in the launch window. Each model resumes where you left it when saved state is available; otherwise it starts from the position defined by the package.
+Prospector selects the package's default model and makes its other models available in the launch window. Each model resumes its saved position when available; otherwise it starts from the position defined by the package. Your current yaw carries across model switches and leaving/re-entering immersion. On a fresh app launch, the first model supplies the initial yaw.
 
 For how to assemble a package, add optional starting positions, or precompile collision data for faster loading, see [Prospector package format](Documentation/Prospector-Packages.md).
 

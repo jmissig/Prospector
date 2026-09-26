@@ -109,7 +109,9 @@ struct LandscapeEnvironment: Hashable, Sendable {
         } catch is CancellationError { throw CancellationError() }
         catch {
             try Task.checkCancellation()
-            return (nil, "Using Meadow: panorama unavailable. \(error.localizedDescription)")
+            let status = "Using Meadow: panorama unavailable. \(error.localizedDescription)"
+            Logger(subsystem: "Prospector", category: "Environment").warning("\(status, privacy: .public)")
+            return (nil, status)
         }
     }
 
