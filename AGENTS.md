@@ -65,6 +65,10 @@ Preserve existing controller behavior unless the task explicitly changes it:
 
 ## Implementation guidance
 
+- Saved locations restore direct navigation coordinates and preserve session yaw. Do not collision-probe on jumps or introduce shared per-model height offsets. Initial and manual landing adjust only the current position; saving records that position directly. Existing sidecars are not automatically migrated.
+
+- Floor-coordinate evidence (Apple docs checked 2026-09-26): an ordinary ImmersiveSpace initially has its origin on the ground beneath the user ([WWDC24](https://developer.apple.com/videos/play/wwdc2024/10153/)); ARKit's queried device transform is in that immersive-space coordinate system ([WWDC24 device tracking](https://developer.apple.com/videos/play/wwdc2024/10093/?time=835)). Treat floor Y=0 as the intended initial reference, not an unsupported assumption requiring custom floor detection. Sitting/standing changes the tracked viewpoint, not the saved destination floor. Origin changes/recentering and coordinate conversions remain relevant; do not diagnose a seated floor-penetration report as a physical-floor-origin failure without evidence.
+
 - Prefer a small explicit model descriptor/value type over a framework, registry service, or asset database.
 - Keep model selection as plain Swift state and keep RealityKit entities at the immersive-view boundary.
 - Make entity replacement lifecycle-safe: avoid duplicate scene entities, subscriptions, tracking sessions, and orphaned tasks.

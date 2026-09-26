@@ -259,7 +259,7 @@ Prospector writes one human-readable state sidecar per model. It records the mod
 
 Writes occur two seconds after movement stops, at most once every 30 seconds during continuous movement, and when switching models, leaving immersive space, opening another package, or backgrounding the app.
 
-Saved locations contain position only. Jumping to one leaves the model's current yaw unchanged. New locations are named `Location 1`, `Location 2`, and so on. They cannot be deleted from the immersive panel; names and deliberate removals can be edited directly in the sidecar.
+Saved locations contain position only. Jumping to one preserves the current yaw and restores its saved navigation coordinates directly, without a session height offset, collision probe, or surface snap. Newly saved positions likewise have no height offset subtracted. Existing sidecars are not migrated. Initial model landing and manual Land on Surface remain available. New locations are named `Location 1`, `Location 2`, and so on. They cannot be deleted from the immersive panel; names and deliberate removals can be edited directly in the sidecar.
 
 If a model state sidecar is malformed, Prospector leaves it untouched and disables writes for that model. A persistence failure does not prevent the model from loading.
 

@@ -35,12 +35,12 @@ This is the product and engineering backlog for Prospector. Performance-specific
 
 ## Navigation
 
-### Verify session floor calibration
+### Verify initial landing and direct saved-location restores
 
-- Prospector attempts **Land on Surface** once after a model first loads, then recalibrates the shared per-model session offset at each saved-location jump.
-- Manual **Land on Surface** adjusts only the current runtime height; it must not alter the shared offset used by later jumps.
-- Verify repeated jumps remain close to their intended heights without changing stored JSON coordinates, including after manually landing while freely exploring.
-- Verify automatic calibration, model switching, flat ground, upper floors, slopes, stairs, overhangs, and locations where no upward-facing surface is found.
+- Prospector attempts **Land on Surface** once after a model first loads, with no shared height correction. Saved-location jumps restore coordinates directly, without collision probing.
+- Manual **Land on Surface** adjusts only the current position; saving afterward records that position directly. It must not shift other saved locations.
+- Verify standing-to-seated restores and repeated jumps preserve intended heights without snapping to another floor or changing stored location coordinates, including after manually landing while freely exploring.
+- Verify initial landing, model switching, flat ground, upper floors, slopes, stairs, overhangs, and locations where no upward-facing surface is found.
 
 ## Immersion and window lifecycle
 
