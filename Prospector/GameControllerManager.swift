@@ -9,6 +9,7 @@ import SwiftUI
 import GameController
 import simd
 import UIKit
+import OSLog
 
 struct ControllerElementPresentation: Equatable {
     let localizedName: String
@@ -41,6 +42,10 @@ struct ControllerPresentation: Equatable {
 }
 
 class GameControllerManager: ObservableObject {
+    private static let navigationLog = Logger(subsystem: "Prospector", category: "Navigation")
+    private var continuousInputEventCount = 0
+    var onNavigationDiagnostic: ((String, String) -> Void)?
+    private var diagnosticInputActive = false
     @Published var movementVector = SIMD2<Float>(0, 0)
     @Published var lookVector = SIMD2<Float>(0, 0)
     @Published var heightAdjustment: Float = 0
@@ -54,6 +59,9 @@ class GameControllerManager: ObservableObject {
 
     var navigationEnabled = true {
         didSet {
+            if navigationEnabled != oldValue {
+                onNavigationDiagnostic?("navigation gate", "enabled=\(navigationEnabled)")
+            }
             guard !navigationEnabled else { return }
             movementVector = .zero
             lookVector = .zero
@@ -134,12 +142,16 @@ class GameControllerManager: ObservableObject {
         
         gamepad.leftThumbstick.valueChangedHandler = { [weak self] _, xValue, yValue in
             guard let self = self else { return }
+            self.continuousInputEventCount += 1
+            self.recordInputActivity()
             
             self.movementVector = self.navigationEnabled ? SIMD2<Float>(xValue, yValue) : .zero
         }
 
         gamepad.rightThumbstick.valueChangedHandler = { [weak self] _, xValue, yValue in
             guard let self = self else { return }
+            self.continuousInputEventCount += 1
+            self.recordInputActivity()
 
             self.lookVector = self.navigationEnabled ? SIMD2<Float>(xValue, yValue) : .zero
         }
@@ -147,6 +159,8 @@ class GameControllerManager: ObservableObject {
         // Left trigger (L2/LT) - decrease height
         gamepad.leftTrigger.valueChangedHandler = { [weak self] _, value, _ in
             guard let self = self else { return }
+            self.continuousInputEventCount += 1
+            self.recordInputActivity()
 
             guard self.navigationEnabled else { self.heightAdjustment = 0; return }
             if value > 0.1 {
@@ -159,6 +173,8 @@ class GameControllerManager: ObservableObject {
         // Right trigger (R2/RT) - increase height
         gamepad.rightTrigger.valueChangedHandler = { [weak self] _, value, _ in
             guard let self = self else { return }
+            self.continuousInputEventCount += 1
+            self.recordInputActivity()
 
             guard self.navigationEnabled else { self.heightAdjustment = 0; return }
             if value > 0.1 {
@@ -193,8 +209,10 @@ class GameControllerManager: ObservableObject {
         }
 
         gamepad.buttonA.pressedChangedHandler = { [weak self] _, _, pressed in
-            guard pressed else { return }
-            self?.toggleLocationsRevision += 1
+            guard pressed, let self else { return }
+            Self.navigationLog.info("Controller A callback: \(self.navigationDiagnosticSummary, privacy: .public)")
+            self.onNavigationDiagnostic?("controller A callback", self.navigationDiagnosticSummary)
+            self.toggleLocationsRevision += 1
         }
         gamepad.buttonX.pressedChangedHandler = { [weak self] _, _, pressed in
             guard pressed, self?.navigationEnabled == true else { return }
@@ -204,6 +222,28 @@ class GameControllerManager: ObservableObject {
             guard pressed, self?.navigationEnabled == true else { return }
             self?.nextLocationRevision += 1
         }
+    }
+
+    /// Sampled only on panel events; no polling timer or UI updates that could
+    /// accidentally keep an idle scene awake. Contains no model/position data.
+    var navigationDiagnosticSummary: String {
+        let gamepad = controller?.extendedGamepad
+        return "enabled=\(navigationEnabled) inputEvents=\(continuousInputEventCount) "
+            + "cachedMove=\(movementVector) cachedLook=\(lookVector) cachedHeight=\(heightAdjustment) "
+            + "rawMove=\(gamepad?.leftThumbstick.xAxis.value ?? 0),\(gamepad?.leftThumbstick.yAxis.value ?? 0) "
+            + "rawLook=\(gamepad?.rightThumbstick.xAxis.value ?? 0),\(gamepad?.rightThumbstick.yAxis.value ?? 0) "
+            + "rawTriggers=\(gamepad?.leftTrigger.value ?? 0),\(gamepad?.rightTrigger.value ?? 0)"
+    }
+
+    private func recordInputActivity() {
+        guard let pad = controller?.extendedGamepad else { return }
+        let values = [pad.leftThumbstick.xAxis.value, pad.leftThumbstick.yAxis.value,
+                      pad.rightThumbstick.xAxis.value, pad.rightThumbstick.yAxis.value,
+                      pad.leftTrigger.value, pad.rightTrigger.value]
+        let active = values.contains { abs($0) > 0.1 }
+        guard active != diagnosticInputActive else { return }
+        diagnosticInputActive = active
+        onNavigationDiagnostic?(active ? "analog input active" : "analog input neutral", navigationDiagnosticSummary)
     }
 
     private func refreshPresentation() {

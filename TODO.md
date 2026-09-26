@@ -30,6 +30,11 @@ This is the product and engineering backlog for Prospector. Performance-specific
 
 ## Navigation
 
+### Diagnose intermittent controller movement stalls
+
+- 1.6.1 report: movement stops shortly after dismissing saved locations, while A and head tracking continue. Root cause is not confirmed.
+- See [investigation and diagnostic log interpretation](Documentation/Navigation-Stall-Investigation.md). Keep baseline frame scheduling while identifying raw controller callbacks versus translated tap gestures and measuring frame/update progress.
+
 ### Verify session floor calibration
 
 - Prospector attempts **Land on Surface** once after a model first loads, then recalibrates the shared per-model session offset at each saved-location jump.

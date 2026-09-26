@@ -67,6 +67,7 @@ Preserve existing controller behavior unless the task explicitly changes it:
 - Keep model selection as plain Swift state and keep RealityKit entities at the immersive-view boundary.
 - Make entity replacement lifecycle-safe: avoid duplicate scene entities, subscriptions, tracking sessions, and orphaned tasks.
 - Preserve locomotion, collision generation, terrain probing, visibility state, and mode cues across the multi-model change unless a deliberate reset is part of the requested behavior.
+- When diagnosing controller stalls, distinguish raw Game Controller callbacks from model tap gestures before treating A as proof of input delivery. Measure frame progress before replacing the update clock; keep behavioral experiments separate so a passing build is not mistaken for a confirmed runtime fix.
 - Treat model-specific starting positions or placement adjustments as explicit per-model data when they are introduced; do not scatter filename checks through view code.
 - Surface asset-loading failures clearly. Do not add new force unwraps or `try!` calls for user-selected models.
 - Keep `.prospector` paths relative and contained within the package. Source models remain USDZ; optional compiled derivatives must be `.reality`. Do not weaken path or symlink validation.

@@ -60,6 +60,15 @@ The controller guide appears below your view and adapts to the connected control
 
 You can also tap your thumb and middle finger together and hold for half a second, using either hand, to hide or reveal the model.
 
+### Collecting movement diagnostics
+
+This diagnostic build writes `navigation-diagnostics.jsonl` inside the open
+`.prospector` package. If movement stops, press A while holding a stick displaced,
+then leave immersion normally and share the package back. The log keeps up to
+1 MiB of recent input, panel, frame-progress, and terrain-loading events without
+recording positions or changing saved locations. It requires a writable package;
+a logging failure appears as a persistence warning.
+
 ## Project notes
 
 - [Prospector package format](Documentation/Prospector-Packages.md)

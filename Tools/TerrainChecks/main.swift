@@ -8,6 +8,7 @@ struct TerrainChecks {
         let base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: base) }
+        try await NavigationDiagnosticsChecks.run(in: base)
         let package = base.appendingPathComponent("Test.prospector")
         try FileManager.default.createDirectory(at: package, withIntermediateDirectories: true)
         try Data().write(to: package.appendingPathComponent("House.usdz"))

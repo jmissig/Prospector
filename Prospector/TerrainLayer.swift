@@ -35,15 +35,18 @@ final class TerrainLayer {
 
     func load(
         _ descriptor: TerrainDescriptor?, revision: Int, parent: Entity,
-        scope: SecurityScopedResource?, warning: @escaping (String?) -> Void
+        scope: SecurityScopedResource?, diagnostic: @escaping (String) -> Void = { _ in },
+        warning: @escaping (String?) -> Void
     ) {
         prepare(for: descriptor, revision: revision)
         warning(nil)
-        guard let descriptor else { return }
+        guard let descriptor else { diagnostic("absent"); return }
+        diagnostic("requested revision=\(revision)")
         if let root, let placementRoot {
             placementRoot.transform = Self.placementTransform(descriptor.placement)
             root.transform = navigationTransform
             root.isEnabled = true
+            diagnostic("reused")
             return
         }
         let request = requestID
@@ -54,9 +57,12 @@ final class TerrainLayer {
             if let previous { await previous.value }
             guard !Task.isCancelled, request == requestID else { return }
             do {
+                let start = ProcessInfo.processInfo.systemUptime
+                diagnostic("decode started")
                 let entity = try await loadEntity(descriptor.url)
                 try Task.checkCancellation()
                 guard request == requestID else { return }
+                diagnostic("decoded elapsedSeconds=\(ProcessInfo.processInfo.systemUptime - start)")
                 Self.removeInteraction(from: entity)
                 let container = Entity()
                 container.name = "Surrounding terrain (visual only)"
@@ -71,10 +77,13 @@ final class TerrainLayer {
                 placementRoot = placement
                 assetURL = descriptor.url
                 packageRevision = revision
+                diagnostic("attached elapsedSeconds=\(ProcessInfo.processInfo.systemUptime - start)")
             } catch is CancellationError {
+                diagnostic("cancelled")
                 return
             } catch {
                 guard !Task.isCancelled, request == requestID else { return }
+                diagnostic("failed")
                 warning("Surrounding terrain is unavailable. The model remains usable.")
             }
         }
