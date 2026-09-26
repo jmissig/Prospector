@@ -19,6 +19,7 @@ struct ProspectorManifest: Decodable {
         let statePath: String?
         let category: String?
         let startPose: ViewerPose?
+        let environment: LandscapeConfiguration?
     }
 }
 
@@ -215,7 +216,8 @@ enum ProspectorDocumentLoader {
                 compiledURL: compiledURL,
                 stateURL: stateURL,
                 category: model.category,
-                startPose: try validatedPose(model.startPose, modelID: modelID, source: "manifest")
+                startPose: try validatedPose(model.startPose, modelID: modelID, source: "manifest"),
+                environment: try model.environment.map { try LandscapeEnvironment(configuration: $0, packageURL: packageURL) }
             )
         }
 

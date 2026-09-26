@@ -22,6 +22,7 @@ This fork keeps Christian's controller-driven USDZ viewer and adds:
 - **Persistent model state and saved locations.** Each model keeps its own resume position and named locations in a readable JSON sidecar. Add locations in immersive view and jump among them with the panel or controller. Prospector attempts to land on a model surface after loading and recalibrates the session height at each saved-location jump.
 - **In-app controller guidance.** A spatial cheat sheet uses the connected controller's labels and glyphs when available, while brief HUD messages confirm location jumps and mode changes.
 - **Progressive immersion.** Use the Digital Crown to move between a peripheral view of the real world and full immersion.
+- **Package-specific landscapes.** Models can replace the default meadow with a calibrated, distant panorama. Scenery stays aligned as you move and turn, without changing the source model or its terrain collisions. The original Meadow remains available through a [hidden preference](Documentation/Prospector-Packages.md#hidden-meadow-override), without adding UI.
 - **Faster, safer model lifecycles.** Model switching releases the outgoing model before loading its replacement, cancels stale work, and manages RealityKit and ARKit resources explicitly.
 - **Architectural USDZ coordinate fixes.** Collision probing and terrain following correctly account for Z-up USDZ files, imported root transforms, model scale, and the viewer's physical position.
 

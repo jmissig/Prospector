@@ -11,6 +11,37 @@ My Models.prospector/
 └── Model-B.usdz
 ```
 
+## Optional distant landscape
+
+Each model can include an `environment` object. Omit it to retain the bundled meadow. Older app versions ignore this optional field.
+
+```json
+"environment": {
+  "texturePath": "Environment/landscape.png",
+  "referencePositionMeters": [0, 0, 0],
+  "landmarkOffsetMeters": [0, 300, -2000],
+  "landmarkUV": [0.5, 0.45]
+}
+```
+
+Supply a 2:1 equirectangular PNG/JPEG inside the package; absolute paths and symlink escapes are rejected. Coordinates are **Y-up navigation meters before user movement/yaw**, not raw USDZ coordinates. Establish the model's north/origin separately; this feature does not georeference models automatically.
+
+`landmarkUV` identifies a known point in the image using normalized top-left-origin coordinates, strictly inside (0,1). `landmarkOffsetMeters` places that point relative to `referencePositionMeters`. Its length sets the shell radius (100–100,000 m). Longitude wraps through the anchor; latitude is piecewise linearly mapped through the anchor and the poles. This anchors one landmark, not every mountain's size or distance. Generated panoramas remain illustrative, not visibility studies.
+
+The unlit landscape replaces the meadow, follows virtual translation/yaw, and is excluded from model bounds, input targets, and terrain collisions. Model visibility toggling leaves scenery visible. Switching or closing removes the outgoing landscape. Invalid calibration fails package opening; texture decoding errors appear in the model-loading error. Private textures belong in packages, never the app repository.
+
+### Hidden Meadow override
+
+The app reads the Boolean UserDefaults key `prospector.useMeadowEnvironment` each time a model loads. `true` skips loading the package panorama and shows the original bundled Meadow skybox; `false` (or an absent key) uses the package landscape when provided, otherwise Meadow. There is no UI control, and package imagery/calibration remains untouched. Package manifest validation still applies.
+
+For a temporary Xcode run, add these two launch arguments to the scheme:
+
+```text
+-prospector.useMeadowEnvironment YES
+```
+
+Remove the arguments to return to normal package selection. To persist the override, set the same Boolean key in the app's own UserDefaults domain; remove it or set it to `false` to restore normal behavior. A Mac `defaults` command does not change preferences on Vision Pro. Reload the model or reopen immersion after changing the preference.
+
 ## Manifest
 
 Manifest format version 1:

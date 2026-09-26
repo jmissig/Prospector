@@ -21,6 +21,8 @@ struct ImmersiveView: View {
     @State private var isInterfacePlacementPending = false
     @State private var isRealityViewReady = false
     @State private var sceneEntity: Entity?
+    @State private var landscapeEntity: Entity?
+    @State private var defaultEnvironmentEntity: Entity?
     @State private var loadedModel: ModelDescriptor?
     @State private var updateSubscription: EventSubscription?
     @State private var worldTracking: WorldTrackingProvider?
@@ -106,7 +108,9 @@ struct ImmersiveView: View {
                     // Scale the sphere negatively on one axis to invert normals (show inside)
                     sphereEntity.scale = SIMD3<Float>(-1, 1, 1)
 
+                    sphereEntity.isEnabled = landscapeEntity == nil
                     content.add(sphereEntity)
+                    defaultEnvironmentEntity = sphereEntity
                 } catch {
                     print("Failed to load environment texture: \(error)")
                 }
@@ -285,6 +289,8 @@ struct ImmersiveView: View {
                     }
 
                     entity.transform = transform
+                    // Landscape is already Y-up navigation-space geometry, not model-local.
+                    landscapeEntity?.transform = Transform(rotation: yawRotation, translation: -rotatedPosition)
                     navigationRuntime.isTransformDirty = false
                 }
 
@@ -554,12 +560,23 @@ struct ImmersiveView: View {
                 try await generateStaticMeshCollisionShapes(for: entity)
             }
 
+            // Hidden override keeps the bundled meadow available without changing
+            // package calibration or adding another control to the immersive UI.
+            let useMeadow = UserDefaults.standard.bool(forKey: "prospector.useMeadowEnvironment")
+            let landscape = useMeadow ? nil : try await model.environment?.makeEntity()
+            try Task.checkCancellation()
+
             guard isCurrentLoad(model, catalogRevision: catalogRevision),
                   let contentRoot else { return }
 
             entity.isEnabled = isContentVisible
             contentRoot.addChild(entity)
             sceneEntity = entity
+            if let landscape {
+                contentRoot.addChild(landscape)
+            }
+            landscapeEntity = landscape
+            defaultEnvironmentEntity?.isEnabled = landscape == nil
             loadedModel = model
             modelCoordinateSpace = ModelCoordinateSpace(
                 importedRootTransform: entity.transform,
@@ -662,6 +679,9 @@ struct ImmersiveView: View {
     private func unloadCurrentModel() {
         sceneEntity?.removeFromParent()
         sceneEntity = nil
+        landscapeEntity?.removeFromParent()
+        landscapeEntity = nil
+        defaultEnvironmentEntity?.isEnabled = true
         loadedModel = nil
         modelCoordinateSpace = nil
         navigationRuntime.endModel()
@@ -744,6 +764,8 @@ struct ImmersiveView: View {
         modeCueTask = nil
         modeCueText = nil
         contentRoot = nil
+        defaultEnvironmentEntity?.removeFromParent()
+        defaultEnvironmentEntity = nil
         interfaceRoot?.removeFromParent()
         interfaceRoot = nil
         isInterfacePlacementPending = false

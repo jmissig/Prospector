@@ -19,6 +19,7 @@ struct ModelDescriptor: Identifiable, Hashable, Sendable {
     let stateURL: URL?
     let category: String?
     let startPose: ViewerPose?
+    let environment: LandscapeEnvironment?
 
     init(
         id: String,
@@ -27,7 +28,8 @@ struct ModelDescriptor: Identifiable, Hashable, Sendable {
         compiledURL: URL? = nil,
         stateURL: URL? = nil,
         category: String? = nil,
-        startPose: ViewerPose? = nil
+        startPose: ViewerPose? = nil,
+        environment: LandscapeEnvironment? = nil
     ) {
         self.id = id
         self.displayName = displayName
@@ -36,6 +38,7 @@ struct ModelDescriptor: Identifiable, Hashable, Sendable {
         self.stateURL = stateURL
         self.category = category
         self.startPose = startPose
+        self.environment = environment
     }
 
     init(
