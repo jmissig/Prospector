@@ -1,5 +1,35 @@
 # Controller movement stall investigation
 
+## Headset evidence: 2026-09-26, 09:16–09:17 PDT
+
+The returned package contains a complete 22-entry session from app 1.6.2,
+build 16, running visionOS 27.0 (24M362), ending in immersive teardown.
+
+- Terrain decoded and attached in approximately 0.069 seconds.
+- Between two panel events 28.008 seconds apart, frame count advanced from
+  909 to 3430: approximately 90 updates/second. The callback was not stalled.
+- Every recorded panel toggle was `model tap`; there were no `controller A
+  callback` or `controller A observed` entries. In conjunction with the user's
+  report of using the controller, this supports system-translated tap routing.
+- Navigation correctly changed back to enabled after each dismissal. Input
+  event count nevertheless remained zero through frame 3676.
+- At 09:17:10, four input callbacks arrived: right trigger press/release, then
+  left trigger press/release. Their active intervals were approximately 0.165
+  and 0.060 seconds. Transform count subsequently rose from 1 to 21, matching
+  the user's brief up/down movement. No stick input appears in this capture.
+- At teardown, 4259 frames had completed and navigation remained enabled.
+
+This identifies input delivery as the failing stage for this reproduction,
+not a stopped scene callback or stuck panel pause. The isolated correction
+adds `.handlesGameControllerEvents(matching: .gamepad)` to the immersive
+RealityView, as required by Apple's controller documentation. Scheduling,
+terrain, input mappings, and diagnostic logging are unchanged. Hardware
+verification of that correction remains pending. The capture does not establish
+why the older omission became visible now; changed OS/focus behavior remains
+unproven, and the last-known-good version/OS combination is still unknown.
+
+The sections below preserve the pre-capture investigation and hypotheses.
+
 ## Report and confidence
 
 Reported on 2026-09-26 against 1.6.1: sticks and ZL/ZR move briefly after

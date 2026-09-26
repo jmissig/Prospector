@@ -9,6 +9,7 @@ import SwiftUI
 import RealityKit
 import ARKit
 import OSLog
+import GameController
 
 struct ImmersiveView: View {
     private static let navigationLog = Logger(subsystem: "Prospector", category: "Navigation")
@@ -345,6 +346,9 @@ struct ImmersiveView: View {
                 }
             }
         }
+        // Otherwise visionOS can route the gamepad as gaze-directed pinch/tap
+        // UI input instead of delivering it to GameControllerManager.
+        .handlesGameControllerEvents(matching: .gamepad)
         .task(id: ModelLoadRequest(
             model: modelSelection.selectedModel,
             catalogRevision: modelSelection.catalogRevision,

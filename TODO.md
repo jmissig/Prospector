@@ -32,8 +32,8 @@ This is the product and engineering backlog for Prospector. Performance-specific
 
 ### Diagnose intermittent controller movement stalls
 
-- 1.6.1 report: movement stops shortly after dismissing saved locations, while A and head tracking continue. Root cause is not confirmed.
-- See [investigation and diagnostic log interpretation](Documentation/Navigation-Stall-Investigation.md). Keep baseline frame scheduling while identifying raw controller callbacks versus translated tap gestures and measuring frame/update progress.
+- The returned 1.6.2 headset log shows healthy frame updates and correct pause state, but almost no analog callbacks; panel toggles arrive as model taps, not raw A callbacks. The isolated gamepad-routing declaration is now added; verify sustained sticks/triggers and raw A callbacks on Vision Pro.
+- See [investigation, headset evidence, and diagnostic log interpretation](Documentation/Navigation-Stall-Investigation.md). Preserve baseline scheduling and logging until hardware confirmation.
 
 ### Verify session floor calibration
 
