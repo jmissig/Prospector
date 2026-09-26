@@ -10,6 +10,7 @@ struct ProspectorManifest: Decodable {
     let name: String
     let defaultModelID: String
     let models: [ManifestModel]
+    let terrains: [TerrainAsset]?
 
     struct ManifestModel: Decodable {
         let id: String
@@ -20,6 +21,8 @@ struct ProspectorManifest: Decodable {
         let category: String?
         let startPose: ViewerPose?
         let environment: LandscapeConfiguration?
+        let terrainID: String?
+        let terrainPlacement: TerrainPlacement?
     }
 }
 
@@ -173,6 +176,7 @@ enum ProspectorDocumentLoader {
             throw ProspectorDocumentError.noModels
         }
 
+        let terrainAssets = try TerrainConfiguration.resolveAssets(manifest.terrains ?? [], packageURL: packageURL)
         var modelIDs = Set<String>()
         var statePaths = Set<String>()
         let models = try manifest.models.map { model -> ModelDescriptor in
@@ -217,7 +221,8 @@ enum ProspectorDocumentLoader {
                 stateURL: stateURL,
                 category: model.category,
                 startPose: try validatedPose(model.startPose, modelID: modelID, source: "manifest"),
-                environment: try model.environment.map { try LandscapeEnvironment(configuration: $0, packageURL: packageURL) }
+                environment: try model.environment.map { try LandscapeEnvironment(configuration: $0, packageURL: packageURL) },
+                terrain: try TerrainConfiguration.descriptor(id: model.terrainID, placement: model.terrainPlacement, assets: terrainAssets)
             )
         }
 

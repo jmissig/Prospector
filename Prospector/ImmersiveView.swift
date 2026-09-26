@@ -22,6 +22,7 @@ struct ImmersiveView: View {
     @State private var isRealityViewReady = false
     @State private var sceneEntity: Entity?
     @State private var landscapeEntity: Entity?
+    @State private var terrainLayer = TerrainLayer()
     @State private var defaultEnvironmentEntity: Entity?
     @State private var loadedModel: ModelDescriptor?
     @State private var updateSubscription: EventSubscription?
@@ -291,6 +292,7 @@ struct ImmersiveView: View {
                     entity.transform = transform
                     // Landscape is already Y-up navigation-space geometry, not model-local.
                     landscapeEntity?.transform = Transform(rotation: yawRotation, translation: -rotatedPosition)
+                    terrainLayer.updateNavigation(Transform(rotation: yawRotation, translation: -rotatedPosition))
                     navigationRuntime.isTransformDirty = false
                 }
 
@@ -518,6 +520,8 @@ struct ImmersiveView: View {
 
     @MainActor
     private func replaceModel(_ model: ModelDescriptor, catalogRevision: Int) async {
+        terrainLayer.prepare(for: model.terrain, revision: catalogRevision)
+        modelSelection.terrainWarning = nil
         let previousTask = modelLoadingTask
         previousTask?.cancel()
         if let previousTask {
@@ -551,7 +555,8 @@ struct ImmersiveView: View {
 
         guard isCurrentLoad(model, catalogRevision: catalogRevision) else { return }
 
-        unloadCurrentModel()
+        terrainLayer.prepare(for: model.terrain, revision: catalogRevision)
+        unloadCurrentModel(preservingTerrain: true)
 
         do {
             let (entity, hasCompiledCollisions) = try await loadEntity(for: model)
@@ -588,6 +593,13 @@ struct ImmersiveView: View {
             )
             modelSelection.recordPose(navigationRuntime.poseForPersistence, for: model)
             modelSelection.loadState = .loaded(modelID: model.id)
+            let yaw = simd_quatf(angle: -navigationRuntime.virtualYaw, axis: SIMD3<Float>(0, 1, 0))
+            terrainLayer.updateNavigation(Transform(rotation: yaw, translation: -simd_act(yaw, navigationRuntime.playerPosition)))
+            terrainLayer.load(model.terrain, revision: catalogRevision, parent: contentRoot,
+                              scope: modelSelection.packageAccessForLoading) { warning in
+                guard isCurrentLoad(model, catalogRevision: catalogRevision) else { return }
+                modelSelection.terrainWarning = warning
+            }
         } catch is CancellationError {
             return
         } catch {
@@ -676,7 +688,9 @@ struct ImmersiveView: View {
     }
 
     @MainActor
-    private func unloadCurrentModel() {
+    private func unloadCurrentModel(preservingTerrain: Bool = false) {
+        if !preservingTerrain { terrainLayer.clear() }
+        modelSelection.terrainWarning = nil
         sceneEntity?.removeFromParent()
         sceneEntity = nil
         landscapeEntity?.removeFromParent()

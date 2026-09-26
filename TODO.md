@@ -2,6 +2,12 @@
 
 This is the product and engineering backlog for Prospector. Performance-specific work remains in [PERFORMANCE.md](PERFORMANCE.md).
 
+## Surrounding terrain
+
+- The optional shared terrain contract and visual-only asynchronous layer are implemented. Follow the [terrain plan](Documentation/Terrain-Plan.md) for the remaining aligned-asset and headset validation.
+- Keep the detailed site authoritative and verify the coarse-terrain transition and finite panorama shell together.
+- Defer optional walkable-terrain collisions until alignment and performance are established; no streaming/GIS runtime or new settings UI in the first increment.
+
 ## Saved locations and immersive controls
 
 ### Verify direct tap navigation on Vision Pro

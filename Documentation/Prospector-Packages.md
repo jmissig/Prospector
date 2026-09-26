@@ -42,6 +42,36 @@ For a temporary Xcode run, add these two launch arguments to the scheme:
 
 Remove the arguments to return to normal package selection. To persist the override, set the same Boolean key in the app's own UserDefaults domain; remove it or set it to `false` to restore normal behavior. A Mac `defaults` command does not change preferences on Vision Pro. Reload the model or reopen immersion after changing the preference.
 
+## Optional surrounding terrain
+
+Terrain is strictly opt-in. Existing packages need no changes. To include visual-only surroundings, define a shared asset in the top-level `terrains` array and select it on individual models:
+
+```json
+"terrains": [
+  { "id": "surroundings", "path": "Terrain/surroundings.usdz" }
+],
+"models": [
+  {
+    "id": "design-a",
+    "name": "Design A",
+    "path": "Design A.usdz",
+    "terrainID": "surroundings",
+    "terrainPlacement": {
+      "translationMeters": [0, 0, 0],
+      "yawRadians": 0
+    }
+  }
+]
+```
+
+Omit `terrainID` for no terrain; omit `terrainPlacement` for identity placement. Multiple designs can share one asset with different placements. `terrainPlacement` without `terrainID`, unknown/duplicate IDs, unsafe paths, and malformed/nonfinite placements are rejected. Paths must be relative contained USDZ paths, without `..` or escaping symlinks. No terrain assets are required unless explicitly referenced; an absent or unreadable referenced USDZ does **not** prevent house loading. A short nonfatal warning appears in the launch window instead. Invalid configuration remains an error, not permission to read outside the package.
+
+Prepare terrain in local meters, Y-up, with geographic reprojection and vertical-datum conversion done upstream. Placement applies positive right-handed yaw about +Y, followed by translation in navigation coordinates. The imported USD root transform is preserved once, beneath this placement. Do not bake large geographic coordinates into the mesh. Keep textures inside USDZ and preserve the original authored house/site assets. See [the terrain plan](Terrain-Plan.md#asset-handoff-and-alignment) for registration and property-cutout requirements.
+
+The house becomes usable before optional terrain loading begins. Terrain follows navigation, remains visible when hiding the house, and is reused across same-package designs referencing the same asset. Changing packages or exiting releases it; canceled results cannot attach to a newer selection. No surrounding-terrain collision, physics, or input components are retained, so it cannot affect floor calibration, terrain following, location jumps, or tap navigation. Saved locations remain house-model state.
+
+The Meadow override affects the backdrop only. This release does not alter panorama radius or stitch terrain to the detailed site; the author must validate the transition and finite panorama shell together. Missing terrain does not remove the backdrop. Compiled terrain, walking on coarse terrain, streaming, and automatic GIS alignment are not implemented.
+
 ## Manifest
 
 Manifest format version 1:

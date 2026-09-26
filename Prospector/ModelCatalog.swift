@@ -20,6 +20,7 @@ struct ModelDescriptor: Identifiable, Hashable, Sendable {
     let category: String?
     let startPose: ViewerPose?
     let environment: LandscapeEnvironment?
+    let terrain: TerrainDescriptor?
 
     init(
         id: String,
@@ -29,7 +30,8 @@ struct ModelDescriptor: Identifiable, Hashable, Sendable {
         stateURL: URL? = nil,
         category: String? = nil,
         startPose: ViewerPose? = nil,
-        environment: LandscapeEnvironment? = nil
+        environment: LandscapeEnvironment? = nil,
+        terrain: TerrainDescriptor? = nil
     ) {
         self.id = id
         self.displayName = displayName
@@ -39,6 +41,7 @@ struct ModelDescriptor: Identifiable, Hashable, Sendable {
         self.category = category
         self.startPose = startPose
         self.environment = environment
+        self.terrain = terrain
     }
 
     init(
@@ -101,12 +104,18 @@ final class ModelSelection {
         didSet {
             guard selectedModel != oldValue else { return }
             loadState = .idle
+            terrainWarning = nil
             refreshSavedLocations()
             Task {
                 await flushPositionPersistence()
             }
         }
     }
+
+    var terrainWarning: String?
+
+    // Captured by optional asset tasks to retain the originating package scope.
+    var packageAccessForLoading: SecurityScopedResource? { documentAccess }
 
     var loadState: ModelLoadState = .idle
 
@@ -153,6 +162,7 @@ final class ModelSelection {
             documentName = document.name
             documentAccess = document.securityScope
             persistenceWarning = document.stateWarning
+            terrainWarning = nil
             catalogRevision += 1
             loadState = .idle
             isOpeningDocument = false

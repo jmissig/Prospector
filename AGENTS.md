@@ -48,7 +48,8 @@ Prospector is a small SwiftUI and RealityKit visionOS app targeting visionOS 26.
 - `Prospector/ModelCatalog.swift` owns model selection and supports bundled and external file sources.
 - `Prospector/ProspectorDocument.swift` validates versioned `.prospector` package manifests and retains security-scoped access to their USDZ files.
 - `Prospector/PositionPersistence.swift` reads and writes per-model `.state.json` pose/location sidecars and owns the coalesced write cadence.
-- The repository currently has no third-party package dependencies or test target.
+- `Prospector/TerrainConfiguration.swift` validates optional shared terrain assets and per-model placement; `TerrainLayer.swift` owns serialized, cancellable visual-only loading and compatible reuse. Terrain never participates in house bounds, input, collisions, or persistence.
+- The repository has no third-party package dependencies or Xcode test target. `Tools/TerrainChecks/run.sh` runs focused package/placement/lifecycle checks plus a synthetic USDZ import on macOS; it does not replace Vision Pro validation.
 
 Preserve existing controller behavior unless the task explicitly changes it:
 
