@@ -112,6 +112,7 @@ final class ModelSelection {
         }
     }
 
+    var environmentStatus: String?
     var terrainWarning: String?
 
     // Captured by optional asset tasks to retain the originating package scope.

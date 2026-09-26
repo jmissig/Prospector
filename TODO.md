@@ -2,6 +2,11 @@
 
 This is the product and engineering backlog for Prospector. Performance-specific work remains in [PERFORMANCE.md](PERFORMANCE.md).
 
+## Photographic panorama
+
+- Standard equirectangular mapping and explicit yaw are implemented; legacy/missing projection now uses Meadow, not landmark stretch. Synthetic Mac mapping and 4K/8K texture checks pass without observed downsampling.
+- Verify a photographic panorama on Vision Pro: horizon/poles, true-north yaw, actual reported dimensions, seam appearance, movement alignment, model switching, Meadow fallback and memory/frame-time behavior. No current private package or imagery was migrated.
+
 ## Surrounding terrain
 
 - The optional shared terrain contract and visual-only asynchronous layer are implemented. Follow the [terrain plan](Documentation/Terrain-Plan.md) for the remaining aligned-asset and headset validation.

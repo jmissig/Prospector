@@ -11,28 +11,107 @@ My Models.prospector/
 └── Model-B.usdz
 ```
 
-## Optional distant landscape
+## Optional photographic panorama
 
-Each model can include an `environment` object. Omit it to retain the bundled meadow. Older app versions ignore this optional field.
+There are two backdrop choices: a **standard equirectangular photograph** or the
+original bundled **Meadow**. The former landmark/rock-stretch mapping is removed.
+Omitting `environment`, omitting its `projection`, or specifying
+`"projection": "meadow"` selects Meadow. This deliberately supersedes the old
+implicit landmark mapping: existing packages still open, but their old
+landmark-configured backgrounds now show Meadow until explicitly migrated.
+Unknown projection names are rejected, not guessed. Do not use this new
+manifest with an older app that only understands the former environment schema.
+
+For a photographic panorama, add this object to the model entry:
 
 ```json
 "environment": {
-  "texturePath": "Environment/landscape.png",
+  "projection": "equirectangular",
+  "texturePath": "Environment/photographic-panorama-8k.png",
   "referencePositionMeters": [0, 0, 0],
-  "landmarkOffsetMeters": [0, 300, -2000],
-  "landmarkUV": [0.5, 0.45]
+  "radiusMeters": 2000,
+  "yawOffsetRadians": 0
 }
 ```
 
-Supply a 2:1 equirectangular PNG/JPEG inside the package; absolute paths and symlink escapes are rejected. Coordinates are **Y-up navigation meters before user movement/yaw**, not raw USDZ coordinates. Establish the model's north/origin separately; this feature does not georeference models automatically.
+- `texturePath`: a package-relative PNG/JPEG. Absolute paths and symlink escapes
+  are rejected. A missing or unreadable image falls back to Meadow at runtime,
+  with a visible status message; the house remains usable.
+- `referencePositionMeters`: finite `[x,y,z]` shell center in **Y-up navigation
+  meters before user translation/yaw**, not raw USDZ coordinates.
+- `radiusMeters`: finite shell radius, 100–100,000 meters. Positioning remains a
+  finite distant sphere, not a head-locked or infinite-distance cubemap.
+- `yawOffsetRadians`: optional finite horizontal alignment offset, default `0`.
+  It never changes latitude, center, radius, or saved poses.
+- `landmarkUV` and `landmarkOffsetMeters` no longer participate in mapping. Extra
+  old fields are ignored. Landmark elevation must already be baked into the image.
 
-`landmarkUV` identifies a known point in the image using normalized top-left-origin coordinates, strictly inside (0,1). `landmarkOffsetMeters` places that point relative to `referencePositionMeters`. Its length sets the shell radius (100–100,000 m). Longitude wraps through the anchor; latitude is piecewise linearly mapped through the anchor and the poles. This anchors one landmark, not every mountain's size or distance. Generated panoramas remain illustrative, not visibility studies.
+### Projection and true-north alignment
 
-The unlit landscape replaces the meadow, follows virtual translation/yaw, and is excluded from model bounds, input targets, and terrain collisions. Model visibility toggling leaves scenery visible. Switching or closing removes the outgoing landscape. Invalid calibration fails package opening; texture decoding errors appear in the model-loading error. Private textures belong in packages, never the app repository.
+Image coordinates use the **top-left** origin, `u` increasing rightward and `v`
+increasing downward. Latitude is exactly `π/2 − πv`: top **+90°**, middle **0°**,
+bottom **−90°**. There is no anchor, special row, or latitude stretch.
+
+At zero yaw, the center of the image (`u=0.5`) faces navigation **−Z**. `u=0.75`
+faces **+X**, `u=0.25` faces **−X**, and both seam edges (`u=0` and `u=1`) face
+**+Z**. Positive yaw turns the image-center bearing from −Z toward +X
+(clockwise viewed from above, with −Z drawn upward); `+π/2` makes the image
+center face +X. This is an azimuth convention, not the positive right-handed
++Y rotation convention used by terrain placement.
+
+To align a known true-north column `uNorth` to the model's north bearing `bNorth`
+(measured from −Z toward +X), set:
+
+```text
+yawOffsetRadians = bNorth − 2π × (uNorth − 0.5)
+```
+
+For example, if model −Z is true north and the north column is `uNorth=0.25`,
+use `yawOffsetRadians = 1.57079632679`. The app does not infer geographic north.
+
+### Resolution, loading and reporting
+
+Use **8192×4096** where possible. **4096×2048** is the supported lower-resolution
+alternative (point `texturePath` at that image). Equirectangular images must be
+2:1 and at least 4096×2048. The app does not rewrite, resize or generate imagery.
+It reads source dimensions through ImageIO and compares them with the actual
+loaded `TextureResource.width`/`height`, reporting both in the launch window and
+in one Environment-category console entry per successful texture load.
+
+If RealityKit returns smaller dimensions, the status explicitly reports the
+change. A loaded 4096×2048 resource is accepted; below that minimum or with a
+non-2:1 aspect ratio, the backdrop falls back to Meadow with an explanation.
+Decode/resource failures also use Meadow, not the retired stretch mapping.
+Invalid configuration (unsafe paths, nonfinite placement, invalid radius, unknown
+mode) still rejects the manifest. Meadow retains its original bundled texture
+and is not subject to the photographic panorama's minimum size.
+
+Source/loaded dimensions describe the base texture, not the mip level chosen
+by the renderer at a particular viewing distance. GPU texture limits and memory
+pressure are device-specific; API support or a Mac test is not a headset
+performance guarantee.
+
+The unlit panorama follows existing virtual translation/yaw, stays visible when
+hiding the house, and is excluded from house bounds, input targets, collisions,
+floor calibration and persistence. Switching or closing removes it as before.
+
+### Verification
+
+Run `sh Tools/PanoramaChecks/run.sh` for synthetic-only Mac checks: manifest
+selection, legacy-to-Meadow compatibility, validation, horizon/poles/linear
+latitude, seam/handedness, yaw alignment, actual 4K/8K texture loading, shell
+position/radius and absence of collision/input components. No private assets
+are used or altered.
+
+2026-09-26 Mac observations: **4096×2048 → 4096×2048** and
+**8192×4096 → 8192×4096**, no observed downsampling. The visionOS Simulator
+build is a compile/link check, not a rendered simulator check. **Headset visual
+orientation, texture resolution under device memory pressure, horizon alignment,
+navigation and frame-time verification remain outstanding.**
 
 ### Hidden Meadow override
 
-The app reads the Boolean UserDefaults key `prospector.useMeadowEnvironment` each time a model loads. `true` skips loading the package panorama and shows the original bundled Meadow skybox; `false` (or an absent key) uses the package landscape when provided, otherwise Meadow. There is no UI control, and package imagery/calibration remains untouched. Package manifest validation still applies.
+The app reads the Boolean UserDefaults key `prospector.useMeadowEnvironment` each time a model loads. `true` skips loading the package panorama and shows the original bundled Meadow skybox; `false` (or an absent key) uses the package landscape when provided, otherwise Meadow. There is no UI control, and package imagery/calibration remains untouched. Explicit equirectangular manifest validation still applies; legacy/missing-mode environments simply select Meadow.
 
 For a temporary Xcode run, add these two launch arguments to the scheme:
 

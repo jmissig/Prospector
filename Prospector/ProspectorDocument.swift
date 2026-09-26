@@ -221,7 +221,7 @@ enum ProspectorDocumentLoader {
                 stateURL: stateURL,
                 category: model.category,
                 startPose: try validatedPose(model.startPose, modelID: modelID, source: "manifest"),
-                environment: try model.environment.map { try LandscapeEnvironment(configuration: $0, packageURL: packageURL) },
+                environment: try LandscapeEnvironment.resolve(model.environment, packageURL: packageURL),
                 terrain: try TerrainConfiguration.descriptor(id: model.terrainID, placement: model.terrainPlacement, assets: terrainAssets)
             )
         }

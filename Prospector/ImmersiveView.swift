@@ -572,7 +572,13 @@ struct ImmersiveView: View {
             // Hidden override keeps the bundled meadow available without changing
             // package calibration or adding another control to the immersive UI.
             let useMeadow = UserDefaults.standard.bool(forKey: "prospector.useMeadowEnvironment")
-            let landscape = useMeadow ? nil : try await model.environment?.makeEntity()
+            var landscape: Entity?
+            var environmentStatus: String?
+            if !useMeadow, let environment = model.environment {
+                let backdrop = try await environment.loadBackdrop()
+                landscape = backdrop.entity
+                environmentStatus = backdrop.status
+            }
             try Task.checkCancellation()
 
             guard isCurrentLoad(model, catalogRevision: catalogRevision),
@@ -584,6 +590,7 @@ struct ImmersiveView: View {
             if let landscape {
                 contentRoot.addChild(landscape)
             }
+            modelSelection.environmentStatus = environmentStatus
             landscapeEntity = landscape
             defaultEnvironmentEntity?.isEnabled = landscape == nil
             loadedModel = model
@@ -699,6 +706,7 @@ struct ImmersiveView: View {
         sceneEntity = nil
         landscapeEntity?.removeFromParent()
         landscapeEntity = nil
+        modelSelection.environmentStatus = nil
         defaultEnvironmentEntity?.isEnabled = true
         loadedModel = nil
         modelCoordinateSpace = nil
