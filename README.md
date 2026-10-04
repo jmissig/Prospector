@@ -29,6 +29,8 @@ This fork keeps Christian's controller-driven USDZ viewer and adds:
 
 ## Getting started
 
+Building requires Swift 6.2 or later and the visionOS 26.2 SDK or later (Xcode 26.2+). The app uses Swift 6 language mode with complete strict-concurrency checking.
+
 1. Set your development team in the project's Signing & Capabilities settings.
 2. Build and run on Apple Vision Pro (visionOS 26.2 or later).
 3. Open a `.prospector` package from Files.

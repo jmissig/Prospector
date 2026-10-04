@@ -39,7 +39,7 @@ Non-goals:
 
 ## Current state
 
-Prospector is a small SwiftUI and RealityKit visionOS app targeting visionOS 26.2 or later.
+Prospector is a small SwiftUI and RealityKit visionOS app targeting visionOS 26.2 or later. Building requires Swift 6.2+ and the visionOS 26.2+ SDK (Xcode 26.2+). Debug and Release use Swift 6 language mode with complete strict-concurrency checking; preserve these settings.
 
 - `Prospector/ContentView.swift` owns the small launch window.
 - `Prospector/ImmersiveView.swift` loads one selected bundled or package-hosted model, preferring an optional compiled `.reality` hierarchy and falling back to USDZ plus runtime collisions. It owns immersive scene movement, collision probing, terrain follow, hand tracking, and mode cues.

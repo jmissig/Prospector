@@ -5,6 +5,10 @@
 //  Created by Christian Selig on 2025-08-20.
 //
 
+#if compiler(<6.2)
+#error("Prospector requires Swift 6.2 or later.")
+#endif
+
 import SwiftUI
 
 @main
